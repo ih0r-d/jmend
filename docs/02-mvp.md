@@ -13,11 +13,11 @@ The MVP must remain small enough to build while learning Rust.
 
 Initial support:
 
--   Maven;
+-   Maven and Gradle project detection;
 -   single-module Java project;
--   macOS development environment.
+-   cross-platform development.
 
-Gradle and multi-module support are intentionally deferred.
+Resolved Gradle models and multi-module support are intentionally deferred.
 
 ## MVP Commands
 
@@ -57,10 +57,9 @@ Shows basic JAR information.
 
 JDoctor must:
 
--   accept a project path;
--   default to the current directory;
--   detect `pom.xml`;
--   identify the project as Maven;
+-   use the current directory;
+-   detect `pom.xml`, `build.gradle`, or `build.gradle.kts`;
+-   identify the project as Maven or Gradle;
 -   determine project root;
 -   expose basic project metadata.
 
@@ -241,7 +240,7 @@ Interactive JAR browsing can come later.
 
 The following are not required for the first usable release:
 
--   Gradle support;
+-   resolved Gradle model and classpath integration;
 -   multi-module Maven;
 -   bytecode instruction analysis;
 -   linkage analysis;
