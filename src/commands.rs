@@ -8,7 +8,7 @@ pub fn run(command: Option<Commands>, output: &mut dyn Write) -> Result<(), AppE
         Some(Commands::Check) => {
             let current_directory = env::current_dir().map_err(AppError::CurrentDirectory)?;
             let result = check::run(&current_directory)?;
-            console::render_check(output, &result).map_err(AppError::Output)
+            console::render_check(&result).map_err(AppError::Output)
         }
         None => placeholder(output, "interactive mode"),
         Some(Commands::Why { .. }) => placeholder(output, "'why'"),
