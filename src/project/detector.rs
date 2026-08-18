@@ -8,23 +8,31 @@ use std::{
 const MAVEN_BUILD_FILE: &str = "pom.xml";
 const GRADLE_BUILD_FILES: [&str; 2] = ["build.gradle", "build.gradle.kts"];
 
-pub fn detect(root: &Path) -> Result<Project, ProjectDetectionError> {
+pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
+    for candidate in start.ancestors() {
+        if let Some(build_tool) = detect_build_tool(candidate)? {
+            return Ok(Project {
+                root: candidate.to_path_buf(),
+                build_tool,
+            });
+        }
+    }
+
+    Err(ProjectDetectionError::Unsupported(start.to_path_buf()))
+}
+
+fn detect_build_tool(root: &Path) -> Result<Option<BuildTool>, ProjectDetectionError> {
     let has_maven = is_file(&root.join(MAVEN_BUILD_FILE))?;
     let has_gradle = GRADLE_BUILD_FILES
         .iter()
         .try_fold(false, |found, name| Ok(found || is_file(&root.join(name))?))?;
 
-    let build_tool = match (has_maven, has_gradle) {
-        (true, false) => BuildTool::Maven,
-        (false, true) => BuildTool::Gradle,
-        (false, false) => return Err(ProjectDetectionError::Unsupported(root.to_path_buf())),
-        (true, true) => return Err(ProjectDetectionError::Ambiguous(root.to_path_buf())),
-    };
-
-    Ok(Project {
-        root: root.to_path_buf(),
-        build_tool,
-    })
+    match (has_maven, has_gradle) {
+        (true, false) => Ok(Some(BuildTool::Maven)),
+        (false, true) => Ok(Some(BuildTool::Gradle)),
+        (false, false) => Ok(None),
+        (true, true) => Err(ProjectDetectionError::Ambiguous(root.to_path_buf())),
+    }
 }
 
 fn is_file(path: &Path) -> Result<bool, ProjectDetectionError> {
@@ -109,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_maven_project() -> Result<(), Box<dyn Error>> {
+    fn detects_maven_project_from_root() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.create_file(MAVEN_BUILD_FILE)?;
 
@@ -121,34 +129,76 @@ mod tests {
     }
 
     #[test]
-    fn detects_gradle_groovy_project() -> Result<(), Box<dyn Error>> {
+    fn detects_maven_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file(MAVEN_BUILD_FILE)?;
+        let nested = directory.0.join("src").join("main").join("java");
+        fs::create_dir_all(&nested)?;
+
+        let project = detect(&nested)?;
+
+        assert_eq!(project.build_tool, BuildTool::Maven);
+        assert_eq!(project.root, directory.0);
+        Ok(())
+    }
+
+    #[test]
+    fn detects_gradle_groovy_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.create_file("build.gradle")?;
+        let nested = directory.0.join("src").join("test");
+        fs::create_dir_all(&nested)?;
 
-        let project = detect(&directory.0)?;
+        let project = detect(&nested)?;
 
         assert_eq!(project.build_tool, BuildTool::Gradle);
+        assert_eq!(project.root, directory.0);
         Ok(())
     }
 
     #[test]
-    fn detects_gradle_kotlin_project() -> Result<(), Box<dyn Error>> {
+    fn detects_gradle_kotlin_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.create_file("build.gradle.kts")?;
+        let nested = directory.0.join("app").join("src");
+        fs::create_dir_all(&nested)?;
 
-        let project = detect(&directory.0)?;
+        let project = detect(&nested)?;
 
         assert_eq!(project.build_tool, BuildTool::Gradle);
+        assert_eq!(project.root, directory.0);
         Ok(())
     }
 
     #[test]
-    fn rejects_unsupported_directory() -> Result<(), Box<dyn Error>> {
+    fn rejects_unsupported_directory_hierarchy() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
+        let nested = directory.0.join("one").join("two").join("three");
+        fs::create_dir_all(&nested)?;
 
-        let error = detect(&directory.0)
+        let error = detect(&nested)
             .err()
             .ok_or("detection unexpectedly succeeded")?;
+
+        assert!(matches!(
+            error,
+            ProjectDetectionError::Unsupported(path) if path == nested
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn stops_after_exhausting_parent_directories() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        let sibling_project = directory.0.join("project");
+        let start = directory.0.join("unrelated").join("nested");
+        fs::create_dir_all(&sibling_project)?;
+        fs::create_dir_all(&start)?;
+        File::create(sibling_project.join(MAVEN_BUILD_FILE)).map(drop)?;
+
+        let error = detect(&start)
+            .err()
+            .ok_or("detection unexpectedly searched outside the ancestor chain")?;
 
         assert!(matches!(error, ProjectDetectionError::Unsupported(_)));
         Ok(())

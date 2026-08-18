@@ -3,8 +3,9 @@
 ## Current Scope
 
 The current implementation establishes the first vertical slice: `jdoctor
-check` detects a Maven or Gradle project in the current directory and prints
-its root and build tool. It does not resolve dependencies or produce diagnostic
+check` searches the current directory and its parents for a Maven or Gradle
+project, produces a structured check result, and renders its root and build
+tool to the console. It does not resolve dependencies or produce diagnostic
 findings yet.
 
 The architecture is intentionally small. New modules should be added when a
@@ -28,12 +29,15 @@ Independent analyzers (planned)
     ↓
 Findings
     ↓
+CheckResult
+    ↓
 Console, JSON, TUI, or CI presentation
 ```
 
-Only project detection and console project output are active today. The
-analysis types define the boundary needed by future analyzers but no fake
-analyzers or findings are registered.
+Only project detection, structured check results, and console output are active
+today. JSON, TUI, and dedicated CI presentation are planned. The analysis types
+define the boundary needed by future analyzers but no fake analyzers or findings
+are registered.
 
 ## Boundaries
 
@@ -41,13 +45,17 @@ analyzers or findings are registered.
 
 `cli` owns command-line syntax. `commands` translates parsed commands into
 application operations. `main` is the process boundary: it reports application
-errors and chooses the exit code.
+errors and chooses the exit code. A check operation returns a `CheckResult`
+containing its `ProjectContext` and findings. It does not write output.
 
 ### Project model and detection
 
 `project` contains the framework-neutral project model. Its detector recognizes
-`pom.xml`, `build.gradle`, and `build.gradle.kts`. A project context combines the
-detected project with capabilities discovered in later phases.
+`pom.xml`, `build.gradle`, and `build.gradle.kts`. Detection begins at the
+requested directory and walks upward through its ancestors until it finds the
+nearest supported project root or reaches the filesystem root. A project
+context combines the detected project with capabilities discovered in later
+phases.
 
 Maven and Gradle will remain responsible for dependency resolution. JDoctor
 will consume their resolved models and classpaths rather than implementing a
@@ -63,8 +71,9 @@ capability.
 ### Output
 
 Output modules transform domain results for a consumer. The first consumer is
-the console. Future JSON, TUI, and CI output should consume the same project
-contexts and findings without changing analyzers.
+the console. Formatting begins only after a complete `CheckResult` exists. Future
+JSON, TUI, and CI output will consume the same structured result, project
+context, and findings without changing commands or analyzers.
 
 ## Errors and Findings
 
