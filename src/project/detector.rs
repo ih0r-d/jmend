@@ -1,12 +1,9 @@
-use super::{BuildTool, Project};
+use super::{BuildTool, BuildWrapper, Project};
 use std::{
     error::Error,
     fmt, fs, io,
     path::{Path, PathBuf},
 };
-
-const MAVEN_BUILD_FILE: &str = "pom.xml";
-const GRADLE_BUILD_FILES: [&str; 2] = ["build.gradle", "build.gradle.kts"];
 
 pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
     for candidate in start.ancestors() {
@@ -14,6 +11,8 @@ pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
             return Ok(Project {
                 root: candidate.to_path_buf(),
                 build_tool,
+                wrapper: detect_wrapper(candidate, build_tool)?,
+                modules: Vec::new(),
             });
         }
     }
@@ -22,24 +21,63 @@ pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
 }
 
 fn detect_build_tool(root: &Path) -> Result<Option<BuildTool>, ProjectDetectionError> {
-    let has_maven = is_file(&root.join(MAVEN_BUILD_FILE))?;
-    let has_gradle = GRADLE_BUILD_FILES
-        .iter()
-        .try_fold(false, |found, name| Ok(found || is_file(&root.join(name))?))?;
+    let mut detected = None;
 
-    match (has_maven, has_gradle) {
-        (true, false) => Ok(Some(BuildTool::Maven)),
-        (false, true) => Ok(Some(BuildTool::Gradle)),
-        (false, false) => Ok(None),
-        (true, true) => Err(ProjectDetectionError::Ambiguous(root.to_path_buf())),
+    for build_tool in BuildTool::DETECTABLE {
+        if contains_any_file(root, build_tool.descriptor().build_files())? {
+            if detected.is_some() {
+                return Err(ProjectDetectionError::Ambiguous(root.to_path_buf()));
+            }
+            detected = Some(build_tool);
+        }
     }
+
+    Ok(detected)
+}
+
+fn detect_wrapper(
+    root: &Path,
+    build_tool: BuildTool,
+) -> Result<Option<BuildWrapper>, ProjectDetectionError> {
+    let descriptor = build_tool.descriptor();
+    let executable = descriptor
+        .wrapper_executables()
+        .iter()
+        .map(|name| root.join(name))
+        .find_map(|path| match is_file(&path) {
+            Ok(true) => Some(Ok(path)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .transpose()?;
+
+    let Some(executable) = executable else {
+        return Ok(None);
+    };
+
+    let metadata_path = descriptor
+        .wrapper_metadata()
+        .iter()
+        .fold(root.to_path_buf(), |path, component| path.join(component));
+    let metadata = is_file(&metadata_path)?.then_some(metadata_path);
+
+    Ok(Some(BuildWrapper {
+        executable,
+        metadata,
+    }))
+}
+
+fn contains_any_file(root: &Path, names: &[&str]) -> Result<bool, ProjectDetectionError> {
+    names
+        .iter()
+        .try_fold(false, |found, name| Ok(found || is_file(&root.join(name))?))
 }
 
 fn is_file(path: &Path) -> Result<bool, ProjectDetectionError> {
     match fs::metadata(path) {
         Ok(metadata) => Ok(metadata.is_file()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(ProjectDetectionError::ReadBuildFile {
+        Err(source) => Err(ProjectDetectionError::InspectPath {
             path: path.to_path_buf(),
             source,
         }),
@@ -50,7 +88,7 @@ fn is_file(path: &Path) -> Result<bool, ProjectDetectionError> {
 pub enum ProjectDetectionError {
     Unsupported(PathBuf),
     Ambiguous(PathBuf),
-    ReadBuildFile { path: PathBuf, source: io::Error },
+    InspectPath { path: PathBuf, source: io::Error },
 }
 
 impl fmt::Display for ProjectDetectionError {
@@ -66,8 +104,8 @@ impl fmt::Display for ProjectDetectionError {
                 "both Maven and Gradle build files found in {}; select a single project root",
                 root.display()
             ),
-            Self::ReadBuildFile { path, .. } => {
-                write!(formatter, "cannot inspect build file {}", path.display())
+            Self::InspectPath { path, .. } => {
+                write!(formatter, "cannot inspect project path {}", path.display())
             }
         }
     }
@@ -76,7 +114,7 @@ impl fmt::Display for ProjectDetectionError {
 impl Error for ProjectDetectionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::ReadBuildFile { source, .. } => Some(source),
+            Self::InspectPath { source, .. } => Some(source),
             Self::Unsupported(_) | Self::Ambiguous(_) => None,
         }
     }
@@ -97,16 +135,18 @@ mod tests {
     impl TestDirectory {
         fn new() -> io::Result<Self> {
             let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "jdoctor-detector-{}-{sequence}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("jmend-detector-{}-{sequence}", std::process::id()));
             fs::create_dir(&path)?;
             Ok(Self(path))
         }
 
         fn create_file(&self, name: &str) -> io::Result<()> {
-            File::create(self.0.join(name)).map(drop)
+            let path = self.0.join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            File::create(path).map(drop)
         }
     }
 
@@ -117,21 +157,65 @@ mod tests {
     }
 
     #[test]
-    fn detects_maven_project_from_root() -> Result<(), Box<dyn Error>> {
+    fn detects_maven_project_with_unix_wrapper() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
-        directory.create_file(MAVEN_BUILD_FILE)?;
+        directory.create_file("pom.xml")?;
+        directory.create_file("mvnw")?;
+        directory.create_file(".mvn/wrapper/maven-wrapper.properties")?;
 
         let project = detect(&directory.0)?;
 
         assert_eq!(project.build_tool, BuildTool::Maven);
         assert_eq!(project.root, directory.0);
+        assert_eq!(
+            project.wrapper,
+            Some(BuildWrapper {
+                executable: directory.0.join("mvnw"),
+                metadata: Some(
+                    directory
+                        .0
+                        .join(".mvn")
+                        .join("wrapper")
+                        .join("maven-wrapper.properties")
+                ),
+            })
+        );
         Ok(())
     }
 
     #[test]
-    fn detects_maven_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
+    fn detects_maven_project_with_windows_wrapper() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
-        directory.create_file(MAVEN_BUILD_FILE)?;
+        directory.create_file("pom.xml")?;
+        directory.create_file("mvnw.cmd")?;
+
+        let project = detect(&directory.0)?;
+
+        assert_eq!(
+            project.wrapper.as_ref().map(|wrapper| &wrapper.executable),
+            Some(&directory.0.join("mvnw.cmd"))
+        );
+        assert_eq!(project.wrapper.and_then(|wrapper| wrapper.metadata), None);
+        Ok(())
+    }
+
+    #[test]
+    fn detects_maven_project_without_wrapper() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file("pom.xml")?;
+
+        let project = detect(&directory.0)?;
+
+        assert_eq!(project.build_tool, BuildTool::Maven);
+        assert_eq!(project.wrapper, None);
+        assert!(project.modules.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn discovers_maven_project_upward() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file("pom.xml")?;
         let nested = directory.0.join("src").join("main").join("java");
         fs::create_dir_all(&nested)?;
 
@@ -143,30 +227,88 @@ mod tests {
     }
 
     #[test]
-    fn detects_gradle_groovy_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
+    fn detects_gradle_groovy_project_with_unix_wrapper() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.create_file("build.gradle")?;
-        let nested = directory.0.join("src").join("test");
-        fs::create_dir_all(&nested)?;
+        directory.create_file("gradlew")?;
+        directory.create_file("gradle/wrapper/gradle-wrapper.properties")?;
 
-        let project = detect(&nested)?;
+        let project = detect(&directory.0)?;
 
         assert_eq!(project.build_tool, BuildTool::Gradle);
         assert_eq!(project.root, directory.0);
+        assert_eq!(
+            project.wrapper,
+            Some(BuildWrapper {
+                executable: directory.0.join("gradlew"),
+                metadata: Some(
+                    directory
+                        .0
+                        .join("gradle")
+                        .join("wrapper")
+                        .join("gradle-wrapper.properties")
+                ),
+            })
+        );
         Ok(())
     }
 
     #[test]
-    fn detects_gradle_kotlin_project_from_nested_directory() -> Result<(), Box<dyn Error>> {
+    fn detects_gradle_kotlin_project_with_windows_wrapper() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.create_file("build.gradle.kts")?;
-        let nested = directory.0.join("app").join("src");
-        fs::create_dir_all(&nested)?;
+        directory.create_file("gradlew.bat")?;
 
-        let project = detect(&nested)?;
+        let project = detect(&directory.0)?;
 
         assert_eq!(project.build_tool, BuildTool::Gradle);
-        assert_eq!(project.root, directory.0);
+        assert_eq!(
+            project.wrapper.as_ref().map(|wrapper| &wrapper.executable),
+            Some(&directory.0.join("gradlew.bat"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detects_gradle_project_without_wrapper() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file("build.gradle")?;
+
+        let project = detect(&directory.0)?;
+
+        assert_eq!(project.build_tool, BuildTool::Gradle);
+        assert_eq!(project.wrapper, None);
+        Ok(())
+    }
+
+    #[test]
+    fn wrapper_without_build_file_is_not_a_project() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file("mvnw")?;
+        directory.create_file("gradlew.bat")?;
+
+        let error = detect(&directory.0)
+            .err()
+            .ok_or("wrapper-only directory was detected as a project")?;
+
+        assert!(matches!(error, ProjectDetectionError::Unsupported(_)));
+        Ok(())
+    }
+
+    #[test]
+    fn selects_nearest_project_root() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.create_file("pom.xml")?;
+        let nested_project = directory.0.join("nested");
+        fs::create_dir_all(&nested_project)?;
+        File::create(nested_project.join("build.gradle.kts")).map(drop)?;
+        let start = nested_project.join("src").join("main");
+        fs::create_dir_all(&start)?;
+
+        let project = detect(&start)?;
+
+        assert_eq!(project.root, nested_project);
+        assert_eq!(project.build_tool, BuildTool::Gradle);
         Ok(())
     }
 
@@ -194,7 +336,7 @@ mod tests {
         let start = directory.0.join("unrelated").join("nested");
         fs::create_dir_all(&sibling_project)?;
         fs::create_dir_all(&start)?;
-        File::create(sibling_project.join(MAVEN_BUILD_FILE)).map(drop)?;
+        File::create(sibling_project.join("pom.xml")).map(drop)?;
 
         let error = detect(&start)
             .err()

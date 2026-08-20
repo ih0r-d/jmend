@@ -1,10 +1,10 @@
 [package]
-name = "jdoctor-tool"
+name = "jmend"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "jdoctor"
+name = "jmend"
 path = "src/main.rs"
 
 [dependencies]

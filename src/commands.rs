@@ -19,5 +19,5 @@ pub fn run(command: Option<Commands>, output: &mut dyn Write) -> Result<(), AppE
 }
 
 fn placeholder(output: &mut dyn Write, command: &str) -> Result<(), AppError> {
-    writeln!(output, "jdoctor: {command} is not implemented yet").map_err(AppError::Output)
+    writeln!(output, "jmend: {command} is not implemented yet").map_err(AppError::Output)
 }

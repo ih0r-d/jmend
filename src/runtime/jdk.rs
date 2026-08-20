@@ -1,5 +1,5 @@
-use std::fmt;
 use super::JdkInfo;
+use std::fmt;
 use std::io::Error;
 use std::process::{Command, Output};
 
