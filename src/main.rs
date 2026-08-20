@@ -1,12 +1,12 @@
 use clap::Parser;
-use jdoctor_tool::{cli::Cli, commands, error::AppError};
+use jmend::{cli::Cli, commands, error::AppError};
 use std::{io, process::ExitCode};
 
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("jdoctor: {error}");
+            eprintln!("jmend: {error}");
             ExitCode::FAILURE
         }
     }

@@ -1,8 +1,12 @@
-# JDoctor --- MVP
+# JMend --- MVP
+
+This document is the implementation plan. The repository currently implements
+project/build-wrapper detection, JDK detection, and the initial `jmend check`
+console overview. Later phases below remain planned unless stated otherwise.
 
 ## Objective
 
-The first JDoctor release should prove one core idea:
+The first JMend release should prove one core idea:
 
 > A native tool can inspect a real JVM project and provide useful
 > dependency/classpath diagnostics through both CLI and TUI interfaces.
@@ -24,7 +28,7 @@ Resolved Gradle models and multi-module support are intentionally deferred.
 ### Interactive Mode
 
 ``` bash
-jdoctor
+jmend
 ```
 
 Opens the TUI for the current project.
@@ -32,7 +36,7 @@ Opens the TUI for the current project.
 ### Check
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
 Runs diagnostics and prints findings without opening the TUI.
@@ -40,7 +44,7 @@ Runs diagnostics and prints findings without opening the TUI.
 ### Why
 
 ``` bash
-jdoctor why <artifact>
+jmend why <artifact>
 ```
 
 Shows dependency paths that introduce an artifact.
@@ -48,14 +52,14 @@ Shows dependency paths that introduce an artifact.
 ### Inspect
 
 ``` bash
-jdoctor inspect <jar>
+jmend inspect <jar>
 ```
 
 Shows basic JAR information.
 
 ## MVP Phase 1 --- Project Detection
 
-JDoctor must:
+JMend must:
 
 -   use the current directory;
 -   detect `pom.xml`, `build.gradle`, or `build.gradle.kts`;
@@ -73,7 +77,7 @@ Build: Maven
 
 ## MVP Phase 2 --- Maven Integration
 
-JDoctor must use the project's Maven wrapper when available.
+JMend must use the project's Maven wrapper when available.
 
 Priority:
 
@@ -84,14 +88,14 @@ mvn
 
 Maven remains responsible for dependency resolution.
 
-JDoctor must obtain enough resolved dependency/classpath information for
+JMend must obtain enough resolved dependency/classpath information for
 analysis.
 
-JDoctor must not implement Maven dependency resolution itself.
+JMend must not implement Maven dependency resolution itself.
 
 ## MVP Phase 3 --- JAR Model
 
-JDoctor must be able to scan JAR files from the resolved classpath.
+JMend must be able to scan JAR files from the resolved classpath.
 
 For each JAR, collect at least:
 
@@ -160,13 +164,13 @@ The analysis core must not format findings specifically for CLI or TUI.
 ## MVP Phase 6 --- CLI Output
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
 should produce concise output such as:
 
 ``` text
-JDoctor — payment-service
+JMend — payment-service
 
 2 warnings
 
@@ -201,7 +205,7 @@ Initial TUI requires only:
 Conceptual layout:
 
 ``` text
-┌ JDoctor — payment-service ─────────────────────────────┐
+┌ JMend — payment-service ─────────────────────────────┐
 │ Maven | Java 21 | 4 findings                          │
 ├──────────────────────┬────────────────────────────────┤
 │ Findings             │ Details                        │
@@ -217,12 +221,12 @@ Conceptual layout:
 ```
 
 The TUI must remain a presentation layer over the same analysis core
-used by `jdoctor check`.
+used by `jmend check`.
 
 ## MVP Phase 8 --- JAR Inspection
 
 ``` bash
-jdoctor inspect foo.jar
+jmend inspect foo.jar
 ```
 
 Initial information:
@@ -325,9 +329,9 @@ In particular:
 The MVP is considered complete when a developer can:
 
 ``` bash
-brew install jdoctor
+brew install jmend
 cd some-maven-project
-jdoctor
+jmend
 ```
 
 and interactively inspect useful classpath findings.
@@ -335,11 +339,11 @@ and interactively inspect useful classpath findings.
 The same project must also support:
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
 for non-interactive diagnostics.
 
-At minimum, JDoctor must detect real duplicate-class or related
+At minimum, JMend must detect real duplicate-class or related
 classpath findings from the resolved Maven project and explain where
 they were found.

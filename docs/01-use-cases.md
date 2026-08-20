@@ -1,14 +1,18 @@
-# JDoctor --- Use Cases
+# JMend --- Use Cases
+
+This document describes intended workflows. Currently, only project and JDK
+detection through `jmend check` are implemented; the remaining analyzers,
+interactive TUI, JSON output, and specialized commands are planned.
 
 ## UC-01 --- Inspect Project
 
-A developer runs JDoctor from a JVM project directory.
+A developer runs JMend from a JVM project directory.
 
 ``` bash
-jdoctor
+jmend
 ```
 
-JDoctor detects the project and presents basic information:
+JMend detects the project and presents basic information:
 
 -   project root;
 -   Maven or Gradle;
@@ -25,10 +29,10 @@ investigation.
 A developer wants a quick diagnostic scan without opening the TUI.
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
-JDoctor analyzes the project and prints findings grouped by severity and
+JMend analyzes the project and prints findings grouped by severity and
 category.
 
 Example:
@@ -52,7 +56,7 @@ in CI.
 
 A developer suspects that several JARs contain the same class.
 
-JDoctor scans the effective classpath and reports duplicate class
+JMend scans the effective classpath and reports duplicate class
 definitions.
 
 Example:
@@ -70,7 +74,7 @@ The developer can inspect the affected JARs and dependency paths.
 
 ## UC-04 --- Find Duplicate Resources
 
-JDoctor detects resources with the same path in multiple JARs.
+JMend detects resources with the same path in multiple JARs.
 
 Examples:
 
@@ -83,7 +87,7 @@ The finding should show every artifact containing the resource.
 
 ## UC-05 --- Inspect ServiceLoader Providers
 
-JDoctor scans `META-INF/services`.
+JMend scans `META-INF/services`.
 
 It reports providers and detects suspicious collisions or duplicated
 provider definitions.
@@ -99,10 +103,10 @@ The developer can inspect:
 A developer sees an unexpected dependency.
 
 ``` bash
-jdoctor why jackson-databind
+jmend why jackson-databind
 ```
 
-JDoctor shows why it exists in the resolved dependency graph.
+JMend shows why it exists in the resolved dependency graph.
 
 Example:
 
@@ -112,11 +116,11 @@ payment-service
     └── jackson-databind
 ```
 
-If multiple paths exist, JDoctor shows each relevant path.
+If multiple paths exist, JMend shows each relevant path.
 
 ## UC-07 --- Diagnose Version Conflicts
 
-JDoctor detects multiple requested versions of the same artifact and
+JMend detects multiple requested versions of the same artifact and
 explains which version is effectively resolved.
 
 Example:
@@ -140,10 +144,10 @@ paths.
 A developer wants to inspect a JAR without extracting it manually.
 
 ``` bash
-jdoctor inspect library.jar
+jmend inspect library.jar
 ```
 
-JDoctor exposes:
+JMend exposes:
 
 -   manifest;
 -   packages;
@@ -157,7 +161,7 @@ The TUI may provide navigation through the JAR structure.
 
 ## UC-09 --- Detect Java Version Incompatibility
 
-JDoctor compares:
+JMend compares:
 
 -   project Java target;
 -   local JDK;
@@ -175,7 +179,7 @@ Potential UnsupportedClassVersionError.
 
 ## UC-10 --- Detect Potential Linkage Problems
 
-JDoctor analyzes bytecode references against the effective runtime
+JMend analyzes bytecode references against the effective runtime
 classpath.
 
 Example:
@@ -207,10 +211,10 @@ This is a post-MVP capability.
 Future workflow:
 
 ``` bash
-jdoctor explain stacktrace.txt
+jmend explain stacktrace.txt
 ```
 
-JDoctor recognizes supported JVM errors and correlates them with the
+JMend recognizes supported JVM errors and correlates them with the
 analyzed classpath.
 
 Initial candidates:
@@ -227,14 +231,14 @@ Initial candidates:
 A CI pipeline runs:
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
 Future options:
 
 ``` bash
-jdoctor check --format json
-jdoctor check --fail-on error
+jmend check --format json
+jmend check --fail-on error
 ```
 
 The same analyzer results used by the TUI are exposed in
@@ -272,7 +276,7 @@ GraalVM support is not required for the initial MVP.
 Future workflow:
 
 ``` bash
-jdoctor compare old.jar new.jar
+jmend compare old.jar new.jar
 ```
 
 Potential comparison:
@@ -300,4 +304,4 @@ Where useful, a fourth level can be provided:
 NEXT STEP
 ```
 
-JDoctor should prefer actionable diagnostics over raw data dumps.
+JMend should prefer actionable diagnostics over raw data dumps.

@@ -1,16 +1,15 @@
-use crate::runtime::jdk::JdkDetectionError;
 use crate::runtime::JdkStatus;
+use crate::runtime::jdk::JdkDetectionError;
 use crate::{
     analysis::finding::Finding,
     error::AppError,
-    project::{detector, ProjectContext},
+    project::{ProjectContext, detector},
 };
 use std::path::Path;
 
 #[derive(Debug)]
 pub struct CheckResult {
     pub project_context: ProjectContext,
-    pub jdk: JdkStatus,
     pub findings: Vec<Finding>,
 }
 
@@ -23,8 +22,7 @@ pub fn run(start: &Path) -> Result<CheckResult, AppError> {
     };
 
     Ok(CheckResult {
-        project_context: ProjectContext::new(project),
-        jdk,
+        project_context: ProjectContext::new(project, jdk),
         findings: Vec::new(),
     })
 }

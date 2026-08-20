@@ -1,26 +1,23 @@
+pub mod build_tool;
 pub mod detector;
+pub mod jvm_framework;
+pub mod jvm_language;
+pub mod project_module;
 
-use std::{collections::BTreeSet, fmt, path::PathBuf};
+use crate::runtime::JdkStatus;
+use std::{collections::BTreeSet, path::PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuildTool {
-    Maven,
-    Gradle,
-}
-
-impl fmt::Display for BuildTool {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Maven => formatter.write_str("Maven"),
-            Self::Gradle => formatter.write_str("Gradle"),
-        }
-    }
-}
+pub use build_tool::{BuildTool, BuildWrapper};
+pub use jvm_framework::{JvmFramework, JvmFrameworkKind};
+pub use jvm_language::{JvmLanguage, JvmLanguageKind};
+pub use project_module::ProjectModule;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
     pub root: PathBuf,
     pub build_tool: BuildTool,
+    pub wrapper: Option<BuildWrapper>,
+    pub modules: Vec<ProjectModule>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,13 +37,15 @@ pub enum ProjectCapability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectContext {
     pub project: Project,
+    pub jdk: JdkStatus,
     pub capabilities: BTreeSet<ProjectCapability>,
 }
 
 impl ProjectContext {
-    pub fn new(project: Project) -> Self {
+    pub fn new(project: Project, jdk: JdkStatus) -> Self {
         Self {
             project,
+            jdk,
             capabilities: BTreeSet::new(),
         }
     }

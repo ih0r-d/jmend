@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
-    name = "jdoctor",
+    name = "jmend",
     version,
-    about = "Native diagnostic tool for JVM projects"
+    about = "JVM and GraalVM diagnostics, compatibility checks, and project analysis"
 )]
 pub struct Cli {
     #[command(subcommand)]

@@ -1,14 +1,16 @@
-# JDoctor --- Product Concept
+# JMend --- Product Concept
 
 ## Overview
 
-JDoctor is a fast native CLI/TUI diagnostic tool for JVM projects.
+JMend — JVM and GraalVM diagnostics, compatibility checks, and project
+analysis.
 
-It analyzes Java/JVM projects, resolved dependencies, classpaths, JAR
-files, and bytecode to detect and explain problems that are otherwise
-difficult to diagnose during build or runtime.
+The current implementation provides a native CLI that detects Maven and Gradle
+projects and the local JDK. The architecture is prepared for future analysis
+of resolved dependencies, classpaths, JAR files, bytecode, GraalVM, and Native
+Image projects; those analyzers and the planned TUI are not implemented yet.
 
-JDoctor is a standalone developer tool. It does not require integration
+JMend is a standalone developer tool. It does not require integration
 into the target application.
 
 ## Problem
@@ -36,7 +38,7 @@ to determine the actual cause.
 
 ## Goal
 
-JDoctor should detect JVM project problems and explain:
+JMend should detect JVM project problems and explain:
 
 1.  What is wrong?
 2.  Why is it wrong?
@@ -58,15 +60,15 @@ become difficult runtime failures.
 
 ### Native Tool
 
-JDoctor is distributed as a standalone native executable.
+JMend is distributed as a standalone native executable.
 
 Target usage:
 
 ``` bash
-brew install jdoctor
+brew install jmend
 ```
 
-The JDoctor process itself does not require a JVM. A JDK or project
+The JMend process itself does not require a JVM. A JDK or project
 build tool may be required when project-specific information must be
 resolved.
 
@@ -75,13 +77,13 @@ resolved.
 Interactive usage:
 
 ``` bash
-jdoctor
+jmend
 ```
 
 Automation and CI:
 
 ``` bash
-jdoctor check
+jmend check
 ```
 
 Both interfaces use the same analysis engine and finding model.
@@ -96,7 +98,7 @@ Instead of:
 Multiple versions of foo-core detected.
 ```
 
-JDoctor should eventually be able to report:
+JMend should eventually be able to report:
 
 ``` text
 foo-client was compiled against foo-core 1.4.
@@ -116,7 +118,7 @@ Potential NoSuchMethodError.
 
 Maven and Gradle remain responsible for dependency resolution.
 
-JDoctor consumes the effective project/classpath information and
+JMend consumes the effective project/classpath information and
 performs diagnostics on top of it.
 
 ### UI-Independent Core
@@ -227,17 +229,17 @@ Initial severities:
 ## Primary Commands
 
 ``` bash
-jdoctor
-jdoctor check
-jdoctor why <dependency>
-jdoctor inspect <jar>
+jmend
+jmend check
+jmend why <dependency>
+jmend inspect <jar>
 ```
 
 Future:
 
 ``` bash
-jdoctor explain <stacktrace-file>
-jdoctor compare <old.jar> <new.jar>
+jmend explain <stacktrace-file>
+jmend compare <old.jar> <new.jar>
 ```
 
 ## Future Extensions
@@ -268,7 +270,7 @@ jdoctor compare <old.jar> <new.jar>
 
 ## Non-Goals
 
-JDoctor is not intended to replace:
+JMend is not intended to replace:
 
 -   Maven;
 -   Gradle;
@@ -291,14 +293,14 @@ Initial targets:
 Primary installation target:
 
 ``` bash
-brew install jdoctor
+brew install jmend
 ```
 
 Additional distribution may include GitHub Releases and crates.io.
 
 ## Implementation
 
-JDoctor is implemented in Rust.
+JMend is implemented in Rust.
 
 Rust is an implementation choice because the project benefits from:
 
@@ -310,5 +312,5 @@ Rust is an implementation choice because the project benefits from:
 -   strong CLI/TUI ecosystem;
 -   cross-platform distribution.
 
-JDoctor is a JVM developer tool implemented in Rust, not a Rust tool for
+JMend is a JVM developer tool implemented in Rust, not a Rust tool for
 JVM developers.

@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  BINARY: jdoctor
+  BINARY: jmend
 
 tasks:
   default:
@@ -42,22 +42,22 @@ tasks:
       - task: test
 
   build:
-    desc: Build JDoctor in debug mode
+    desc: Build JMend in debug mode
     cmds:
       - cargo build --bin {{.BINARY}}
 
   build-release:
-    desc: Build JDoctor in release mode
+    desc: Build JMend in release mode
     cmds:
       - cargo build --release --bin {{.BINARY}}
 
   run:
-    desc: Run JDoctor
+    desc: Run JMend
     cmds:
       - cargo run --bin {{.BINARY}} -- {{.CLI_ARGS}}
 
   run-check:
-    desc: Run JDoctor check command
+    desc: Run JMend check command
     cmds:
       - cargo run --bin {{.BINARY}} -- check
 
@@ -67,7 +67,7 @@ tasks:
       - cargo run --bin playground
 
   install:
-    desc: Install JDoctor locally
+    desc: Install JMend locally
     cmds:
       - cargo install --path . --force
 

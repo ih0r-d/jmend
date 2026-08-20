@@ -13,4 +13,3 @@ pub enum JdkStatus {
     NotFound,
     Unavailable(String),
 }
-
