@@ -104,6 +104,37 @@ context, language/framework metadata, JDK state, and findings without changing
 commands or analyzers. Version-list separators, brackets, labels, colors, and
 other display grammar remain presentation concerns rather than domain fields.
 
+The bare `jmend` command is the branded entry point. It renders the reusable
+JMend banner and clap-generated command help; a future TUI may take over this
+entry point. `jmend check` intentionally omits the large banner and remains a
+compact health overview. Its one-line header contains the JMend version, host
+platform, and diagnostic status, followed by project/JDK fingerprint metadata,
+analyzer capability rows, and finding counts. Project and JDK rows are metadata,
+not successful checks. It may aggregate module metadata, but it does not list
+modules, dependencies, classpath entries, or native details. A future TUI will
+provide detailed exploration of modules, toolchains, dependencies, classpaths,
+frameworks, GraalVM, Native Image, and individual findings. The TUI is not
+implemented yet.
+
+The check header renders the Cargo package version with the host operating
+system and CPU architecture. Raw host values come from Rust's platform
+constants and remain separate fields; the console applies only small
+human-readable aliases and preserves unfamiliar future values. Shell detection
+is intentionally excluded from the compact overview.
+
+JDK detection obtains `java.version`, `java.vendor`, and `java.runtime.name`
+from standard JVM system properties in one Java invocation. Vendor and runtime
+names are optional opaque strings supplied by that JDK, not values from a
+hardcoded vendor taxonomy or installation-path inference. The console appends
+the vendor when present. The detected JDK remains distinct from module language
+and target-level metadata, and a GraalVM-related vendor does not complete the
+separate GraalVM analysis row.
+
+The default overview uses one GraalVM row rather than a separate Native row.
+This presentation choice does not remove Native Image, native-library, or
+architecture-compatibility concepts from the domain; those may later appear as
+GraalVM details or findings when real analyzers exist.
+
 ## Errors and Findings
 
 An error means JMend could not complete an operation. Examples include being
@@ -118,13 +149,26 @@ must be findings, not application errors.
 
 No findings are emitted by the current project-detection slice.
 
-Module discovery is not implemented today, so detected projects have an empty
-module collection and language/framework rows remain unanalyzed. Future Maven
-discovery should consume the effective reactor/model, while Gradle discovery
-should consume included projects from its settings/model. JMend must not infer
-membership by recursively treating every nested build file as a module. The
-model supports module values without treating structural support as a
-successful detection.
+Maven module discovery reads direct top-level `<modules>` declarations from
+the root POM and recursively from declared child aggregators. Module paths are
+resolved relative to the POM that declares them. Aggregator modules and leaf
+modules are each represented once, while the root project is excluded from the
+module count. Discovery records the module path, its `pom.xml`, and a direct
+project-level `artifactId` when present. It rejects missing module directories,
+missing or malformed child POMs, and cyclic declarations. It does not scan for
+arbitrary nested POMs.
+
+This is intentionally a structural subset of Maven rather than its effective
+model. Modules declared only by profiles are excluded because JMend does not
+evaluate active profiles yet. Module declarations are currently expected to
+name directories containing `pom.xml`; explicit POM-file declarations are not
+supported. Maven property interpolation, inheritance, dependency resolution,
+and build execution remain future work.
+
+Gradle multi-project discovery is also not implemented; it will eventually
+consume included projects from Gradle settings/model data rather than applying
+Maven rules. Language and framework metadata remain unanalyzed even after
+module discovery.
 
 ## Extension Strategy
 

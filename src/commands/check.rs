@@ -1,3 +1,4 @@
+use crate::runtime::HostPlatform;
 use crate::runtime::JdkStatus;
 use crate::runtime::jdk::JdkDetectionError;
 use crate::{
@@ -10,6 +11,7 @@ use std::path::Path;
 #[derive(Debug)]
 pub struct CheckResult {
     pub project_context: ProjectContext,
+    pub host: HostPlatform,
     pub findings: Vec<Finding>,
 }
 
@@ -23,6 +25,7 @@ pub fn run(start: &Path) -> Result<CheckResult, AppError> {
 
     Ok(CheckResult {
         project_context: ProjectContext::new(project, jdk),
+        host: HostPlatform::detect(),
         findings: Vec::new(),
     })
 }

@@ -2,6 +2,7 @@ pub mod build_tool;
 pub mod detector;
 pub mod jvm_framework;
 pub mod jvm_language;
+pub mod maven;
 pub mod project_module;
 
 use crate::runtime::JdkStatus;

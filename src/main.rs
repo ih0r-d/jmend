@@ -1,5 +1,5 @@
-use clap::Parser;
-use jmend::{cli::Cli, commands, error::AppError};
+use clap::{CommandFactory, Parser};
+use jmend::{cli::Cli, commands, error::AppError, output::console};
 use std::{io, process::ExitCode};
 
 fn main() -> ExitCode {
@@ -14,6 +14,11 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), AppError> {
     let cli = Cli::parse();
+    if cli.command.is_none() {
+        let help = Cli::command().render_help().to_string();
+        return console::render_root(&help).map_err(AppError::Output);
+    }
+
     let stdout = io::stdout();
     commands::run(cli.command, &mut stdout.lock())
 }
