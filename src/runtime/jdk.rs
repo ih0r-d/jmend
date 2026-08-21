@@ -31,6 +31,7 @@ impl std::error::Error for JdkDetectionError {}
 
 pub fn detect() -> Result<JdkInfo, JdkDetectionError> {
     let output = Command::new("java")
+        .arg("-XshowSettings:properties")
         .arg("-version")
         .output()
         .map_err(JdkDetectionError::Command)?;
@@ -46,19 +47,28 @@ fn parse_output(output: Output) -> Result<JdkInfo, JdkDetectionError> {
         });
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    parse_metadata(&String::from_utf8_lossy(&output.stderr))
+}
 
-    let first_line = stderr
-        .lines()
-        .next()
-        .ok_or(JdkDetectionError::VersionNotFound)?;
-
-    let version = extract_version(first_line).ok_or(JdkDetectionError::VersionNotFound)?;
+fn parse_metadata(output: &str) -> Result<JdkInfo, JdkDetectionError> {
+    let version =
+        property(output, "java.version").or_else(|| output.lines().find_map(extract_version));
+    let version = version.ok_or(JdkDetectionError::VersionNotFound)?;
 
     Ok(JdkInfo {
         version,
-        vendor: None,
-        runtime: None,
+        vendor: property(output, "java.vendor"),
+        runtime: property(output, "java.runtime.name"),
+    })
+}
+
+fn property(output: &str, name: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (key, value) = line.trim().split_once('=')?;
+        (key.trim() == name)
+            .then(|| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
     })
 }
 
@@ -67,4 +77,42 @@ fn extract_version(line: &str) -> Option<String> {
     let end = line[start..].find('"')? + start;
 
     Some(line[start..end].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_standard_jdk_properties_with_arbitrary_vendor() -> Result<(), JdkDetectionError> {
+        let info = parse_metadata(
+            "Property settings:\n    java.home = /opt/custom-jdk\n    java.runtime.name = Example Runtime\n    java.vendor = Example Custom JDK Vendor\n    java.version = 21.0.2\n",
+        )?;
+
+        assert_eq!(info.version, "21.0.2");
+        assert_eq!(info.vendor.as_deref(), Some("Example Custom JDK Vendor"));
+        assert_eq!(info.runtime.as_deref(), Some("Example Runtime"));
+        Ok(())
+    }
+
+    #[test]
+    fn missing_vendor_remains_optional_and_is_not_inferred_from_java_home()
+    -> Result<(), JdkDetectionError> {
+        let info = parse_metadata(
+            "java.home = /Library/Java/JavaVirtualMachines/SomeVendorName.jdk\njava.version = 21.0.2\n",
+        )?;
+
+        assert_eq!(info.version, "21.0.2");
+        assert_eq!(info.vendor, None);
+        Ok(())
+    }
+
+    #[test]
+    fn quoted_version_output_remains_a_fallback() -> Result<(), JdkDetectionError> {
+        let info = parse_metadata("openjdk version \"21.0.2\" 2024-01-16")?;
+
+        assert_eq!(info.version, "21.0.2");
+        assert_eq!(info.vendor, None);
+        Ok(())
+    }
 }

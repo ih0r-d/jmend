@@ -1,4 +1,4 @@
-use super::{BuildTool, BuildWrapper, Project};
+use super::{BuildTool, BuildWrapper, Project, maven};
 use std::{
     error::Error,
     fmt, fs, io,
@@ -8,11 +8,15 @@ use std::{
 pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
     for candidate in start.ancestors() {
         if let Some(build_tool) = detect_build_tool(candidate)? {
+            let modules = match build_tool {
+                BuildTool::Maven => maven::discover_modules(candidate)?,
+                BuildTool::Gradle | BuildTool::Sbt | BuildTool::Mill | BuildTool::Ant => Vec::new(),
+            };
             return Ok(Project {
                 root: candidate.to_path_buf(),
                 build_tool,
                 wrapper: detect_wrapper(candidate, build_tool)?,
-                modules: Vec::new(),
+                modules,
             });
         }
     }
@@ -89,6 +93,7 @@ pub enum ProjectDetectionError {
     Unsupported(PathBuf),
     Ambiguous(PathBuf),
     InspectPath { path: PathBuf, source: io::Error },
+    MavenModel(maven::MavenModelError),
 }
 
 impl fmt::Display for ProjectDetectionError {
@@ -107,6 +112,7 @@ impl fmt::Display for ProjectDetectionError {
             Self::InspectPath { path, .. } => {
                 write!(formatter, "cannot inspect project path {}", path.display())
             }
+            Self::MavenModel(error) => error.fmt(formatter),
         }
     }
 }
@@ -115,8 +121,15 @@ impl Error for ProjectDetectionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::InspectPath { source, .. } => Some(source),
+            Self::MavenModel(error) => Some(error),
             Self::Unsupported(_) | Self::Ambiguous(_) => None,
         }
+    }
+}
+
+impl From<maven::MavenModelError> for ProjectDetectionError {
+    fn from(error: maven::MavenModelError) -> Self {
+        Self::MavenModel(error)
     }
 }
 
@@ -146,7 +159,19 @@ mod tests {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            File::create(path).map(drop)
+            if name.ends_with("pom.xml") {
+                fs::write(path, "<project><artifactId>fixture</artifactId></project>")
+            } else {
+                File::create(path).map(drop)
+            }
+        }
+
+        fn write_file(&self, name: &str, content: &str) -> io::Result<()> {
+            let path = self.0.join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, content)
         }
     }
 
@@ -209,6 +234,25 @@ mod tests {
         assert_eq!(project.build_tool, BuildTool::Maven);
         assert_eq!(project.wrapper, None);
         assert!(project.modules.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn populates_declared_maven_modules() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write_file(
+            "pom.xml",
+            "<project><artifactId>root</artifactId><modules><module>api</module></modules></project>",
+        )?;
+        directory.write_file(
+            "api/pom.xml",
+            "<project><artifactId>public-api</artifactId></project>",
+        )?;
+
+        let project = detect(&directory.0)?;
+
+        assert_eq!(project.modules.len(), 1);
+        assert_eq!(project.modules[0].name.as_deref(), Some("public-api"));
         Ok(())
     }
 
