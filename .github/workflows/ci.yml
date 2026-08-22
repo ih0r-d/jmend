@@ -5,6 +5,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -43,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -67,7 +68,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -90,7 +91,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -107,7 +108,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -117,3 +118,228 @@ jobs:
 
       - name: Show duplicate dependencies
         run: cargo tree --duplicates
+
+  snapshot:
+    name: Snapshot · ${{ matrix.name }}
+    needs:
+      - format
+      - quality
+      - tests
+      - docs
+      - dependencies
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: jmend
+            artifact: jmend-linux-x86_64
+            archive: jmend-linux-x86_64.tar.gz
+
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            binary: jmend
+            artifact: jmend-linux-arm64
+            archive: jmend-linux-arm64.tar.gz
+
+          - name: macOS arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            binary: jmend
+            artifact: jmend-macos-arm64
+            archive: jmend-macos-arm64.tar.gz
+
+          - name: macOS x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: jmend
+            artifact: jmend-macos-x86_64
+            archive: jmend-macos-x86_64.tar.gz
+
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: jmend.exe
+            artifact: jmend-windows-x86_64
+            archive: jmend-windows-x86_64.zip
+
+          - name: Windows arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            binary: jmend.exe
+            artifact: jmend-windows-arm64
+            archive: jmend-windows-arm64.zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          cache: true
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Verify Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ./target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+          ./target/${{ matrix.target }}/release/${{ matrix.binary }} --help > /dev/null
+
+      - name: Verify Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "target/${{ matrix.target }}/release/${{ matrix.binary }}" --version
+          & "target/${{ matrix.target }}/release/${{ matrix.binary }}" --help | Out-Null
+
+      - name: Prepare snapshot
+        shell: python
+        run: |
+          import hashlib
+          import os
+          from pathlib import Path
+
+          target = "${{ matrix.target }}"
+          binary_name = "${{ matrix.binary }}"
+
+          binary = Path("target") / target / "release" / binary_name
+          dist = Path("dist")
+          dist.mkdir(exist_ok=True)
+
+          output_name = "jmend.exe" if binary_name.endswith(".exe") else "jmend"
+          output = dist / output_name
+          output.write_bytes(binary.read_bytes())
+
+          digest = hashlib.sha256(output.read_bytes()).hexdigest()
+          size = output.stat().st_size
+
+          Path("dist/SHA256SUMS").write_text(
+              f"{digest}  {output_name}\n",
+              encoding="utf-8",
+          )
+
+          Path("dist/BUILD_INFO").write_text(
+              "\n".join([
+                  "project=JMend",
+                  "version=${{ github.ref_name }}",
+                  "commit=${{ github.sha }}",
+                  f"target={target}",
+                  f"size_bytes={size}",
+                  f"sha256={digest}",
+                  "",
+              ]),
+              encoding="utf-8",
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"sha256={digest}\n")
+              f.write(f"size={size}\n")
+        id: snapshot_info
+
+      - name: Package Unix snapshot
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar \
+            -C dist \
+            -czf "${{ matrix.archive }}" \
+            jmend \
+            SHA256SUMS \
+            BUILD_INFO
+
+      - name: Package Windows snapshot
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist/jmend.exe", "dist/SHA256SUMS", "dist/BUILD_INFO" `
+            -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Write snapshot summary
+        shell: python
+        run: |
+          import os
+
+          size = int("${{ steps.snapshot_info.outputs.size }}")
+          digest = "${{ steps.snapshot_info.outputs.sha256 }}"
+
+          if size >= 1024 * 1024:
+              human_size = f"{size / 1024 / 1024:.2f} MiB"
+          elif size >= 1024:
+              human_size = f"{size / 1024:.2f} KiB"
+          else:
+              human_size = f"{size} B"
+
+          summary = f"""## JMend Snapshot
+
+          | Property | Value |
+          | --- | --- |
+          | Platform | `${{ matrix.name }}` |
+          | Target | `${{ matrix.target }}` |
+          | Artifact | `${{ matrix.archive }}` |
+          | Binary size | `{human_size}` |
+          | SHA-256 | `{digest}` |
+          | Commit | `${{ github.sha }}` |
+
+          ### Verification
+
+          - Release build completed
+          - `jmend --version` passed
+          - `jmend --help` passed
+          - SHA-256 generated
+          - Snapshot artifact uploaded
+          """
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(summary)
+
+  ci-success:
+    name: CI Passed
+    if: always()
+    needs:
+      - format
+      - quality
+      - tests
+      - docs
+      - dependencies
+      - snapshot
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify all jobs
+        shell: bash
+        run: |
+          if [[ "${{ needs.format.result }}" != "success" ]] ||
+             [[ "${{ needs.quality.result }}" != "success" ]] ||
+             [[ "${{ needs.tests.result }}" != "success" ]] ||
+             [[ "${{ needs.docs.result }}" != "success" ]] ||
+             [[ "${{ needs.dependencies.result }}" != "success" ]] ||
+             [[ "${{ needs.snapshot.result }}" != "success" ]]; then
+            echo "CI validation failed"
+            exit 1
+          fi
+
+          echo "All JMend CI checks and snapshot builds passed"
