@@ -8,23 +8,33 @@
  \___/|_|  |_|\___|_| |_|\__,_|
 ```
 
-**JVM & GraalVM diagnostics for JVM projects.**
+**JMend — JVM and GraalVM readiness diagnostics and risk analysis.**
 
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
 [![Task](https://img.shields.io/badge/Task-Taskfile-29BEB0?logo=task)](https://taskfile.dev/)
 [![License](https://img.shields.io/github/license/ih0r-d/jmend)](LICENSE)
 
-JMend is a developer tool for inspecting JVM projects, their build environment,
-runtime configuration, dependencies, classpath, and GraalVM compatibility.
+JMend is an independent JVM ecosystem diagnostics and risk-analysis tool. Its
+long-term purpose is to correlate evidence across project structure,
+toolchains, dependencies, classpaths, bytecode, native components, GraalVM,
+Native Image, and Polyglot usage so compatibility problems and engineering
+risks can be found before builds, CI, or production.
 
-The project is written in Rust and designed as a fast, cross-platform CLI with
-a future interactive TUI for deeper project diagnostics.
+> **Status:** the current `0.1` foundation provides a project fingerprint, not
+> the future analysis described below. It does not yet analyze dependencies,
+> classpaths, bytecode, GraalVM, Native Image, or Polyglot usage, and it emits no
+> diagnostic findings.
 
-> **Status:** JMend is under active development. The current version provides
-> the initial JVM project fingerprint; deeper analyzers are being implemented
-> incrementally.
+## What works today
 
-## Quick Start
+- JVM project/root detection for Maven and Gradle build files
+- recursive Maven multi-module discovery
+- Maven and Gradle wrapper metadata detection
+- local JDK version, vendor, and runtime detection
+- host operating-system and architecture metadata
+- a structured project/module, analysis, and findings foundation
+- the branded root CLI and compact `jmend check`
+- repository CI validation and cross-platform snapshot builds
 
 Run JMend from a JVM project:
 
@@ -32,85 +42,39 @@ Run JMend from a JVM project:
 jmend check
 ```
 
-Example:
+The output contains only detected, implemented information. Running `jmend`
+shows the branded command entry point and help.
 
-```text
-JMend v0.1.0 · macOS arm64 · HEALTHY
+## Direction
 
-Project         Maven         [10 modules]
-JDK             25            [GraalVM Community]
+JMend is designed for the wider JVM ecosystem: Java, Kotlin, Scala, Groovy,
+and Clojure; Maven, Gradle, SBT, Mill, and Ant; and significant JVM frameworks
+and platforms. These are compatibility targets, not claims of current support.
 
-0 errors · 0 warnings
-```
+Planned analysis spans JVM/toolchains, builds, dependencies, classpaths,
+bytecode, and native components. GraalVM and Native Image are first-class
+specializations, and Polyglot configuration and cross-language risks are a
+major intended differentiator.
 
-Running JMend without a command displays the CLI entry point and available
-commands:
+Build tools and runtimes are data sources, not the product. JMend may consume
+their models and output as evidence, but its value comes from normalizing that
+evidence, correlating it across layers, and producing independent findings and
+readiness conclusions. It is not a Maven, Gradle, or `native-image` wrapper.
 
-```console
-jmend
-```
-
-## Project Fingerprint
-
-JMend currently detects:
-
-- Maven and Gradle JVM projects
-- Maven multi-module project structure
-- local JDK version
-- JDK vendor
-- Maven and Gradle wrapper metadata
-- host operating system and architecture
-
-The internal project model supports multi-module JVM projects from the
-beginning, allowing different modules to expose their own languages,
-frameworks, build metadata, and runtime information.
-
-## Planned Analysis
-
-JMend is being built incrementally around independent analyzers.
-
-Planned capabilities include:
-
-- JVM language and language-level detection
-- framework detection
-- Maven and Gradle build-tool diagnostics
-- dependency graph analysis
-- dependency conflict detection
-- classpath inspection
-- bytecode compatibility analysis
-- native library inspection
-- GraalVM and Polyglot diagnostics
-- Native Image diagnostics
-- structured JSON output
-- interactive TUI
-
-The compact `jmend check` command is intended to remain a quick project health
-overview. Detailed inspection and navigation will belong to the TUI and
-specialized commands.
+See the [product concept](docs/00-product-concept.md), [use
+cases](docs/01-use-cases.md), [architecture](docs/03-architecture.md), and
+[roadmap](docs/04-roadmap.md) for the planned scope and explicit anti-goals.
 
 ## Development
 
 JMend requires a Rust toolchain compatible with the Rust 2024 edition.
 
-Run all validation:
-
 ```console
 task verify
-```
-
-Run JMend against the current project:
-
-```console
 task run-check
 ```
 
-Or directly with Cargo:
-
-```console
-cargo run --bin jmend -- check
-```
-
-Individual checks:
+Or run the checks directly:
 
 ```console
 cargo fmt --check
@@ -119,14 +83,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-## Roadmap
-
-Development is tracked through
-[GitHub Issues](https://github.com/ih0r-d/jmend/issues) and
-[Milestones](https://github.com/ih0r-d/jmend/milestones).
-
-The current milestone focuses on the initial **Project Fingerprint** and the
-foundation required for deeper JVM diagnostics.
+The current GitHub workflows validate JMend itself and create snapshot builds.
+They are distinct from the planned user-facing JMend CI analysis mode.
 
 ## License
 

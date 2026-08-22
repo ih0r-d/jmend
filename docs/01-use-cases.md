@@ -1,307 +1,104 @@
-# JMend --- Use Cases
+# JMend — Use Cases
 
-This document describes intended workflows. Currently, only project and JDK
-detection through `jmend check` are implemented; the remaining analyzers,
-interactive TUI, JSON output, and specialized commands are planned.
+## Current workflow: project fingerprint
 
-## UC-01 --- Inspect Project
+A developer runs:
 
-A developer runs JMend from a JVM project directory.
-
-``` bash
-jmend
-```
-
-JMend detects the project and presents basic information:
-
--   project root;
--   Maven or Gradle;
--   Java target version;
--   modules;
--   packaging;
--   available diagnostics.
-
-The interactive TUI becomes the main entry point for further
-investigation.
-
-## UC-02 --- Run Project Health Check
-
-A developer wants a quick diagnostic scan without opening the TUI.
-
-``` bash
+```console
 jmend check
 ```
 
-JMend analyzes the project and prints findings grouped by severity and
-category.
+Today JMend finds the nearest Maven or Gradle project root, discovers declared
+Maven modules recursively, records wrapper metadata, detects local JDK
+version/vendor/runtime and host OS/architecture, and renders a compact result.
+It does not yet resolve dependencies or emit diagnostic findings. Running
+`jmend` displays the branded CLI entry point and help; there is no TUI yet.
 
-Example:
+## Planned diagnostic workflows
 
-``` text
-ERROR
-  1 incompatible bytecode finding
+The following use cases describe product direction, not implemented commands
+or analyzers.
 
-WARNING
-  3 dependency conflicts
-  7 duplicate classes
+### JVM and toolchain readiness
 
-INFO
-  2 observations
+JMend collects module targets, runtime and build-tool JDKs, and class-file
+versions, then correlates them. A Java 21 target combined with dependency
+bytecode requiring Java 25 should yield an evidence-backed compatibility
+finding rather than merely two unrelated facts.
+
+### Build and multi-module consistency
+
+JMend compares effective project models, wrappers, toolchains, targets, and
+module configuration to identify reliably provable mismatches. Maven and
+Gradle still own build execution and dependency resolution; their models are
+evidence for JMend analysis.
+
+### Dependency, classpath, and bytecode risks
+
+Planned inspection includes dependency paths and conflicts, duplicate classes,
+split packages, resource and service-provider collisions, unsupported
+bytecode, and missing referenced classes/methods/fields where reliable. Future
+drill-down may explain dependency origin or inspect JAR contents, but JMend is
+not intended as a generic dependency listing or archive viewer.
+
+### Native component readiness
+
+JMend inventories bundled `.so`, `.dylib`, and `.dll` components and correlates
+their operating system and architecture with build/runtime targets. For
+example, an arm64 Native Image target with an x86_64 JNI library should produce
+a native architecture incompatibility finding.
+
+### GraalVM and Native Image readiness
+
+JMend evaluates GraalVM runtime and dependency consistency and treats Native
+Image as a first-class domain. Planned evidence covers reachability metadata,
+reflection, resources, serialization, proxies, JNI, and native libraries. A
+resolved library at version 2.4 paired with metadata intended for 2.1 should
+produce a metadata compatibility risk when that conclusion is supportable.
+
+### Polyglot risks
+
+JMend identifies Polyglot API and guest-language usage and analyzes Engine,
+Context, HostAccess, sandbox, lifecycle, and cross-language configuration. For
+example, unrestricted host access should become an explainable security finding
+in the appropriate context. GraalPy and GraalJS are important future targets.
+
+### Detailed exploration
+
+A future TUI will explore Overview, Modules, Toolchains, Languages, Frameworks,
+Dependencies, Classpath, Bytecode, Native, GraalVM, Native Image, Polyglot, and
+Findings. It will consume the same structured result as CLI and CI rather than
+hosting separate diagnostic logic.
+
+### CI readiness gate
+
+The conceptual flow is:
+
+```text
+PR / build
+    ↓
+JMend analysis
+    ↓
+Findings
+    ↓
+Exit policy / PR annotations / reports
 ```
 
-The command should return a meaningful exit code so it can later be used
-in CI.
-
-## UC-03 --- Find Duplicate Classes
-
-A developer suspects that several JARs contain the same class.
-
-JMend scans the effective classpath and reports duplicate class
-definitions.
-
-Example:
-
-``` text
-Duplicate class:
-com.example.internal.Utils
-
-Found in:
-foo-core-1.4.jar
-legacy-sdk-3.2.jar
-```
-
-The developer can inspect the affected JARs and dependency paths.
-
-## UC-04 --- Find Duplicate Resources
-
-JMend detects resources with the same path in multiple JARs.
-
-Examples:
-
--   configuration resources;
--   metadata;
--   service descriptors;
--   framework resources.
-
-The finding should show every artifact containing the resource.
-
-## UC-05 --- Inspect ServiceLoader Providers
-
-JMend scans `META-INF/services`.
-
-It reports providers and detects suspicious collisions or duplicated
-provider definitions.
-
-The developer can inspect:
-
--   service interface;
--   provider implementations;
--   containing artifacts.
-
-## UC-06 --- Explain Dependency Origin
-
-A developer sees an unexpected dependency.
-
-``` bash
-jmend why jackson-databind
-```
-
-JMend shows why it exists in the resolved dependency graph.
-
-Example:
-
-``` text
-payment-service
-└── legacy-payment-sdk
-    └── jackson-databind
-```
-
-If multiple paths exist, JMend shows each relevant path.
-
-## UC-07 --- Diagnose Version Conflicts
-
-JMend detects multiple requested versions of the same artifact and
-explains which version is effectively resolved.
-
-Example:
-
-``` text
-jackson-core
-
-requested:
-  2.18.4 via legacy-sdk
-  2.20.0 via platform
-
-resolved:
-  2.20.0
-```
-
-The developer should be able to navigate from the finding to dependency
-paths.
-
-## UC-08 --- Inspect a JAR
-
-A developer wants to inspect a JAR without extracting it manually.
-
-``` bash
-jmend inspect library.jar
-```
-
-JMend exposes:
-
--   manifest;
--   packages;
--   classes;
--   resources;
--   service providers;
--   multi-release entries;
--   class-file metadata.
-
-The TUI may provide navigation through the JAR structure.
-
-## UC-09 --- Detect Java Version Incompatibility
-
-JMend compares:
-
--   project Java target;
--   local JDK;
--   build tool JDK;
--   class-file versions found in dependencies.
-
-Example:
-
-``` text
-Project target: Java 21
-Dependency foo-sdk contains Java 25 bytecode.
-
-Potential UnsupportedClassVersionError.
-```
-
-## UC-10 --- Detect Potential Linkage Problems
-
-JMend analyzes bytecode references against the effective runtime
-classpath.
-
-Example:
-
-``` text
-legacy-client.jar invokes:
-
-Foo.connect(String)
-
-Resolved Foo.class provides:
-
-Foo.connect(String, Duration)
-
-Potential NoSuchMethodError.
-```
-
-The finding includes:
-
--   caller;
--   expected symbol;
--   resolved class;
--   dependency origin;
--   evidence.
-
-This is a post-MVP capability.
-
-## UC-11 --- Explain a JVM Error
-
-Future workflow:
-
-``` bash
-jmend explain stacktrace.txt
-```
-
-JMend recognizes supported JVM errors and correlates them with the
-analyzed classpath.
-
-Initial candidates:
-
--   `NoSuchMethodError`;
--   `NoSuchFieldError`;
--   `ClassNotFoundException`;
--   `NoClassDefFoundError`;
--   `UnsupportedClassVersionError`;
--   `ServiceConfigurationError`.
-
-## UC-12 --- CI Check
-
-A CI pipeline runs:
-
-``` bash
-jmend check
-```
-
-Future options:
-
-``` bash
-jmend check --format json
-jmend check --fail-on error
-```
-
-The same analyzer results used by the TUI are exposed in
-machine-readable form.
-
-## UC-13 --- Spring Diagnostics
-
-Future optional analyzer for Spring projects.
-
-Potential capabilities:
-
--   detect Spring Boot project;
--   inspect configuration metadata;
--   detect unknown configuration properties;
--   inspect profiles;
--   identify suspicious configuration overrides.
-
-Spring support is not required for the initial MVP.
-
-## UC-14 --- GraalVM Diagnostics
-
-Future optional analyzer for GraalVM projects.
-
-Potential capabilities:
-
--   detect GraalVM Polyglot dependencies;
--   detect inconsistent GraalVM artifact versions;
--   inspect language dependencies;
--   identify common project configuration problems.
-
-GraalVM support is not required for the initial MVP.
-
-## UC-15 --- Compare Builds
-
-Future workflow:
-
-``` bash
-jmend compare old.jar new.jar
-```
-
-Potential comparison:
-
--   dependencies;
--   classes;
--   resources;
--   public binary API;
--   Java version;
--   newly introduced findings.
-
-## User Experience Principle
-
-Every diagnostic should aim to provide three levels:
-
-``` text
-WHAT
-WHY
-EVIDENCE
-```
-
-Where useful, a fourth level can be provided:
-
-``` text
-NEXT STEP
-```
-
-JMend should prefer actionable diagnostics over raw data dumps.
+Planned capabilities include deterministic exit codes, severity thresholds,
+baselines, only-new-findings mode, JSON, SARIF, GitHub Code Scanning
+annotations, and PR summaries. The repository's current CI validates and
+packages JMend itself; it is not the future user-facing CI mode.
+
+## Finding experience
+
+Every future finding should answer:
+
+1. What did JMend find?
+2. Where did it find it, and what module or artifact is affected?
+3. Why does it matter, and what readiness dimension is affected?
+4. What evidence supports the conclusion?
+5. How can the developer investigate or remediate it?
+
+Language and framework detection enrich this context. They are evidence, not
+the primary product value; compatibility conclusions produced by correlating
+evidence are the value.

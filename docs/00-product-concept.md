@@ -1,316 +1,141 @@
-# JMend --- Product Concept
+# JMend — Product Concept
+
+## Positioning
+
+**JMend — JVM and GraalVM readiness diagnostics and risk analysis.**
+
+JMend is an independent JVM ecosystem diagnostics and risk-analysis tool. It
+is intended to analyze project structure, toolchains, dependencies, classpath,
+bytecode, native components, GraalVM, Native Image, and Polyglot usage to find
+compatibility problems and engineering risks before they reach builds, CI, or
+production.
+
+The current `0.1` implementation is the project-fingerprint foundation. It
+detects supported project roots, Maven modules, wrapper metadata, the local
+JDK, and the host platform. The deeper analysis in this document is planned.
+
+## Product principle
+
+> **Build tools and runtimes are data sources, not the product.**
+
+Maven, Gradle, JDKs, GraalVM, project files, classpaths, bytecode, native
+binaries, and generated metadata can provide evidence. JMend's independent
+value comes from:
+
+1. collecting structured evidence;
+2. normalizing it into a common project model;
+3. correlating information across different layers;
+4. generating findings, risks, and readiness conclusions.
+
+JMend should not merely invoke existing commands and reformat their output.
+It should avoid duplicating build-tool behavior when no independent diagnostic
+value is added.
 
-## Overview
-
-JMend — JVM and GraalVM diagnostics, compatibility checks, and project
-analysis.
-
-The current implementation provides a native CLI that detects Maven and Gradle
-projects and the local JDK. The architecture is prepared for future analysis
-of resolved dependencies, classpaths, JAR files, bytecode, GraalVM, and Native
-Image projects; those analyzers and the planned TUI are not implemented yet.
-
-JMend is a standalone developer tool. It does not require integration
-into the target application.
-
-## Problem
-
-JVM projects can fail because of issues that are not obvious from
-`pom.xml` or `build.gradle` alone.
-
-Typical examples:
-
--   dependency version conflicts;
--   duplicate classes and resources;
--   split packages;
--   conflicting `ServiceLoader` providers;
--   incompatible bytecode versions;
--   missing classes;
--   binary incompatibilities;
--   potential `NoSuchMethodError`;
--   potential `NoSuchFieldError`;
--   `ClassNotFoundException`;
--   `NoClassDefFoundError`;
--   JDK and build-toolchain mismatches.
-
-Developers often need several different tools and manual investigation
-to determine the actual cause.
-
-## Goal
-
-JMend should detect JVM project problems and explain:
-
-1.  What is wrong?
-2.  Why is it wrong?
-3.  Where did it come from?
-4.  What should the developer investigate next?
-
-The primary focus is pre-flight diagnostics: detect problems before they
-become difficult runtime failures.
-
-## Target Users
-
--   Java and JVM developers;
--   library/framework maintainers;
--   developers working with large Maven or Gradle projects;
--   developers debugging dependency and classpath issues;
--   CI/CD pipelines that need JVM project diagnostics.
-
-## Core Principles
-
-### Native Tool
-
-JMend is distributed as a standalone native executable.
-
-Target usage:
-
-``` bash
-brew install jmend
-```
-
-The JMend process itself does not require a JVM. A JDK or project
-build tool may be required when project-specific information must be
-resolved.
-
-### CLI + TUI
-
-Interactive usage:
-
-``` bash
-jmend
-```
-
-Automation and CI:
-
-``` bash
-jmend check
-```
-
-Both interfaces use the same analysis engine and finding model.
-
-### Explain, Not Just Report
-
-A finding should include evidence and context.
-
-Instead of:
-
-``` text
-Multiple versions of foo-core detected.
-```
-
-JMend should eventually be able to report:
-
-``` text
-foo-client was compiled against foo-core 1.4.
-
-The effective runtime classpath contains foo-core 2.0.
-
-foo-client invokes:
-Foo.connect(String)
-
-foo-core 2.0 provides:
-Foo.connect(String, Duration)
-
-Potential NoSuchMethodError.
-```
-
-### Do Not Reimplement Maven or Gradle
-
-Maven and Gradle remain responsible for dependency resolution.
-
-JMend consumes the effective project/classpath information and
-performs diagnostics on top of it.
-
-### UI-Independent Core
-
-``` text
-Project
-   |
-   v
-Project Model
-   |
-   v
-Analyzers
-   |
-   v
-Findings
-  /   \
-CLI   TUI
-```
-
-Diagnostic logic must not depend on terminal UI code.
-
-### Extensible Analysis
-
-Diagnostics should be implemented as independent analyzers.
-
-Potential analyzers:
-
--   project analyzer;
--   dependency analyzer;
--   classpath analyzer;
--   duplicate-class analyzer;
--   linkage analyzer;
--   bytecode analyzer;
--   JDK analyzer;
--   Spring analyzer;
--   GraalVM analyzer.
-
-## Core Domains
-
-### Project
-
--   project root;
--   Maven/Gradle detection;
--   modules;
--   Java version;
--   packaging;
--   build files.
-
-### Dependencies
-
--   resolved dependencies;
--   dependency paths;
--   version conflicts;
--   convergence problems;
--   dependency origin.
-
-### Classpath
-
--   duplicate classes;
--   duplicate resources;
--   split packages;
--   conflicting service providers;
--   missing classes.
-
-### JAR Inspection
-
--   manifest;
--   classes;
--   resources;
--   `META-INF/services`;
--   multi-release JAR structure;
--   class metadata.
-
-### Bytecode and Linkage
-
-Future analysis of JVM class references should enable detection of
-potential:
-
--   `NoSuchMethodError`;
--   `NoSuchFieldError`;
--   missing referenced classes;
--   incompatible class versions.
-
-## Finding Model
-
-A finding is the central diagnostic result.
-
-Conceptually:
-
-``` text
-id
-severity
-category
-title
-description
-evidence
-location
-suggestion
-```
-
-Initial severities:
-
--   INFO
--   WARNING
--   ERROR
--   CRITICAL
-
-## Primary Commands
-
-``` bash
-jmend
-jmend check
-jmend why <dependency>
-jmend inspect <jar>
-```
-
-Future:
-
-``` bash
-jmend explain <stacktrace-file>
-jmend compare <old.jar> <new.jar>
-```
-
-## Future Extensions
-
-### Spring
-
--   configuration diagnostics;
--   configuration metadata;
--   profiles;
--   auto-configuration inspection.
-
-### GraalVM
-
--   Polyglot artifact consistency;
--   language artifact versions;
--   runtime resource diagnostics.
-
-### Security
-
--   vulnerable dependency findings.
-
-### Comparison
-
--   dependency changes;
--   binary API changes;
--   class changes;
--   newly introduced classpath problems.
-
-## Non-Goals
-
-JMend is not intended to replace:
-
--   Maven;
--   Gradle;
--   IDEs;
--   JFR;
--   VisualVM;
--   JVM profilers;
--   application monitoring platforms;
--   Spring administration tools.
-
-## Distribution
-
-Initial targets:
-
--   macOS Apple Silicon;
--   macOS x86-64;
--   Linux x86-64;
--   Linux ARM64.
-
-Primary installation target:
-
-``` bash
-brew install jmend
-```
-
-Additional distribution may include GitHub Releases and crates.io.
-
-## Implementation
-
-JMend is implemented in Rust.
-
-Rust is an implementation choice because the project benefits from:
-
--   fast startup;
--   native binaries;
--   predictable resource usage;
--   safe low-level parsing;
--   efficient processing of large JAR/classpath sets;
--   strong CLI/TUI ecosystem;
--   cross-platform distribution.
-
-JMend is a JVM developer tool implemented in Rust, not a Rust tool for
-JVM developers.
+## Collection and analysis
+
+Collection answers factual questions: what modules, JDKs, resolved
+dependencies, bytecode versions, native binaries, and GraalVM metadata exist?
+Analysis asks whether those facts form a valid and safe combination and what
+runtime, build, compatibility, security, performance, or Native Image risk
+follows.
+
+For example, collection may establish that a project targets Java 21 and a
+dependency contains Java 25 bytecode. Analysis turns those facts into a JVM
+compatibility finding. This separation is a fundamental architecture
+principle: evidence gathering must not silently become a diagnostic conclusion.
+
+## Ecosystem scope
+
+JMend is not Java-only. Its future compatibility scope includes Java, Kotlin,
+Scala, Groovy, and Clojure projects and Maven, Gradle, SBT, Mill, and Ant build
+tools. Project context may include Spring Boot, Quarkus, Micronaut, Helidon,
+Hibernate, and other significant JVM frameworks and platforms.
+
+These are ecosystem targets. Today, JMend detects Maven and Gradle roots and
+models these language, framework, and build-tool kinds, but it does not yet
+detect languages or frameworks, execute build tools, or support every modeled
+build tool.
+
+## Analysis domains
+
+The long-term domains are:
+
+- **JVM / Toolchain:** runtime and target compatibility, module target
+  differences, build-tool JDK differences, bytecode levels, JDK-internal APIs,
+  and JPMS issues.
+- **Build:** project-model consistency, runtime/tool mismatch, wrapper and
+  toolchain configuration, and multi-module inconsistencies.
+- **Dependencies:** conflicting versions, graph inconsistencies, compatibility
+  risks, and changes that affect GraalVM or Native Image readiness.
+- **Classpath / Bytecode:** duplicate classes, split packages, conflicting
+  resources and service providers, unsupported bytecode, and reliably
+  detectable missing classes, methods, or fields.
+- **Native components:** `.so`, `.dylib`, and `.dll` inventory; OS and
+  architecture mismatch; and JNI/native dependency risks.
+- **GraalVM:** runtime compatibility, dependency/version consistency,
+  reachability-metadata compatibility, and configuration risks.
+- **Native Image:** reflection, resources, serialization, proxies, JNI,
+  reachability metadata, native-library architecture, metadata versions, and
+  AOT-specific compatibility. Native Image is a first-class domain rather than
+  a hidden metadata detail.
+- **Polyglot:** Polyglot API and guest-language detection, GraalPy and GraalJS,
+  Engine and Context lifecycle/configuration, HostAccess and sandbox boundaries,
+  language/runtime compatibility, cross-language dependencies, and potential
+  performance, security, or lifecycle risks.
+
+None of these domain analyzers is implemented in the current foundation.
+
+## Correlation is the differentiator
+
+JMend should find problems across layers, not just inventory each layer:
+
+- Java 21 module + Java 25 dependency bytecode → JVM compatibility risk.
+- arm64 Native Image target + x86_64 JNI library → native architecture risk.
+- dependency 2.4 + reachability metadata for 2.1 → metadata compatibility risk.
+- Polyglot API + unrestricted host access → Polyglot security risk.
+- incompatible GraalVM/Polyglot versions across modules → cross-module risk.
+
+These are conceptual examples, not current functionality.
+
+## Findings and readiness
+
+A finding should eventually explain what JMend found, where it found it, why it
+matters, the supporting evidence, the affected module or artifact, the
+readiness impact, and a useful remediation. A future risk model may use
+Critical, High, Medium, Low, and Info severities.
+
+The current Rust model contains code, severity, category, title, and
+description fields with Info, Warning, Error, and Critical severities. It emits
+no findings today. The model may evolve deliberately rather than being changed
+only to imitate the future terminology.
+
+## Interfaces
+
+`jmend check` remains the compact overview: eventually a small fingerprint,
+readiness checks, and a findings/risk summary. Until analyzers exist it must
+show only real fingerprint data and must not fake readiness.
+
+A future TUI will support detailed exploration of Overview, Modules,
+Toolchains, Languages, Frameworks, Dependencies, Classpath, Bytecode, Native,
+GraalVM, Native Image, Polyglot, and Findings. CLI, TUI, CI, JSON, and SARIF
+should consume the same structured analysis result.
+
+Future user-facing CI can apply deterministic exit policies and severity
+thresholds, compare baselines, report only new findings, emit JSON or SARIF,
+and create GitHub annotations and PR summaries. Repository workflows currently
+test and package JMend itself; they are not that product capability.
+
+## Anti-goals
+
+JMend should not become:
+
+- a generic build-tool wrapper or replacement for Maven or Gradle;
+- a replacement for GraalVM Native Build Tools or a `native-image` wrapper;
+- a replacement for `jdeps` or dependency managers;
+- a prettier frontend that only aggregates command output;
+- a generic dependency-listing tool;
+- a framework-specific analyzer limited to Spring;
+- a Java-only tool.
+
+Existing tools remain useful evidence sources. JMend must add independent,
+cross-layer analysis value.
