@@ -164,7 +164,7 @@ fn render_analyzers(output: &mut dyn Write, result: &CheckResult) -> io::Result<
 
 fn aggregate_languages(project: &crate::project::Project) -> Vec<&crate::project::JvmLanguage> {
     let mut languages = Vec::new();
-    for language in project.modules.iter().flat_map(|module| &module.languages) {
+    for language in project.build_units().flat_map(|module| &module.languages) {
         if !languages.contains(&language) {
             languages.push(language);
         }
@@ -174,7 +174,7 @@ fn aggregate_languages(project: &crate::project::Project) -> Vec<&crate::project
 
 fn aggregate_frameworks(project: &crate::project::Project) -> Vec<&crate::project::JvmFramework> {
     let mut frameworks = Vec::new();
-    for framework in project.modules.iter().flat_map(|module| &module.frameworks) {
+    for framework in project.build_units().flat_map(|module| &module.frameworks) {
         if !frameworks.contains(&framework) {
             frameworks.push(framework);
         }
@@ -272,6 +272,7 @@ mod tests {
                     root: PathBuf::from("project"),
                     build_tool,
                     wrapper,
+                    root_module: ProjectModule::new(PathBuf::from("project")),
                     modules: Vec::new(),
                 },
                 jdk,
@@ -453,6 +454,23 @@ mod tests {
     }
 
     #[test]
+    fn root_module_is_not_included_in_child_module_count() -> Result<(), Box<dyn Error>> {
+        let mut result = check_result(BuildTool::Maven, None);
+        result
+            .project_context
+            .project
+            .root_module
+            .jvm_targets
+            .push(crate::project::JvmTarget::new(JvmLanguageKind::Java, "21"));
+
+        let output = render_plain(&result)?;
+
+        assert!(output.contains("Project         Maven"));
+        assert!(!output.contains("[1 module]"));
+        Ok(())
+    }
+
+    #[test]
     fn renders_plural_module_count_as_secondary_metadata() -> Result<(), Box<dyn Error>> {
         let mut result = check_result(BuildTool::Maven, None);
         result.project_context.project.modules = (1..=7)
@@ -498,7 +516,7 @@ mod tests {
                     Some("21".to_string()),
                 )],
                 frameworks: Vec::new(),
-                target_runtime: None,
+                jvm_targets: Vec::new(),
             },
             ProjectModule {
                 name: Some("analytics".to_string()),
@@ -509,7 +527,7 @@ mod tests {
                     JvmLanguage::new(JvmLanguageKind::Kotlin, Some("2.2.0".to_string())),
                 ],
                 frameworks: Vec::new(),
-                target_runtime: None,
+                jvm_targets: Vec::new(),
             },
         ];
 

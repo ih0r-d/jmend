@@ -10,6 +10,7 @@ Foundation scope:
 - project/root detection;
 - Maven and Gradle build-file detection;
 - Maven multi-module discovery;
+- direct Maven Java target evidence for root and child build units;
 - JDK and host environment metadata;
 - structured project/module and findings foundation;
 - compact CLI and branded root command;
@@ -18,9 +19,9 @@ Foundation scope:
 Implemented today: all items above, including wrapper metadata detection.
 Still-valid follow-up work associated with the fingerprint includes language
 and framework detection, Gradle multi-project support, build-tool runtime and
-version data, project Java target detection, and the first compatibility
-findings. These should not be marked complete merely because supporting model
-types or planned output rows exist.
+version data, broader effective-model target resolution, and the first
+compatibility findings. These should not be marked complete merely because
+supporting model types or planned output rows exist.
 
 Language/framework data is project context, build-tool metadata is evidence,
 and compatibility findings are the first core diagnostic value.
