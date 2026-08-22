@@ -1,14 +1,18 @@
+pub mod build_runtime;
 pub mod build_tool;
 pub mod detector;
+pub mod gradle_runtime;
 pub mod jvm_framework;
 pub mod jvm_language;
 pub mod jvm_target;
 pub mod maven;
+pub mod maven_runtime;
 pub mod project_module;
 
 use crate::runtime::JdkStatus;
 use std::{collections::BTreeSet, path::PathBuf};
 
+pub use build_runtime::{BuildToolRuntime, BuildToolSource};
 pub use build_tool::{BuildTool, BuildWrapper};
 pub use jvm_framework::{JvmFramework, JvmFrameworkKind};
 pub use jvm_language::{JvmLanguage, JvmLanguageKind};
@@ -53,6 +57,7 @@ pub enum ProjectCapability {
 pub struct ProjectContext {
     pub project: Project,
     pub jdk: JdkStatus,
+    pub build_tool_runtime: Option<BuildToolRuntime>,
     pub capabilities: BTreeSet<ProjectCapability>,
 }
 
@@ -61,6 +66,7 @@ impl ProjectContext {
         Self {
             project,
             jdk,
+            build_tool_runtime: None,
             capabilities: BTreeSet::new(),
         }
     }

@@ -12,8 +12,9 @@ production.
 
 The current `0.1` implementation is the project-fingerprint foundation. It
 detects supported project roots, Maven root and child build units, direct
-supported Maven compiler targets per build unit, wrapper metadata, the local
-JDK, and the host platform. The deeper analysis in this document is planned.
+supported Maven compiler targets per build unit, wrapper metadata, Maven or
+Gradle version and execution-JDK evidence when available, the JMend runtime JDK,
+and the host platform. The deeper analysis in this document is planned.
 
 ## Product principle
 

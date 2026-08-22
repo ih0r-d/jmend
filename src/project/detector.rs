@@ -66,8 +66,8 @@ fn detect_wrapper(
     build_tool: BuildTool,
 ) -> Result<Option<BuildWrapper>, ProjectDetectionError> {
     let descriptor = build_tool.descriptor();
-    let executable = descriptor
-        .wrapper_executables()
+    let executable = build_tool
+        .wrapper_executables_for(crate::process::CommandPlatform::current())
         .iter()
         .map(|name| root.join(name))
         .find_map(|path| match is_file(&path) {

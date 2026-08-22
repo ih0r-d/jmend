@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser};
 use jmend::{cli::Cli, commands, error::AppError, output::console};
-use std::{io, process::ExitCode};
+use std::process::ExitCode;
 
 fn main() -> ExitCode {
     match run() {
@@ -19,6 +19,5 @@ fn run() -> Result<(), AppError> {
         return console::render_root(&help).map_err(AppError::Output);
     }
 
-    let stdout = io::stdout();
-    commands::run(cli.command, &mut stdout.lock())
+    commands::run(cli.command.expect("subcommand checked above"))
 }

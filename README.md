@@ -31,6 +31,7 @@ risks can be found before builds, CI, or production.
 - recursive Maven multi-module discovery
 - Maven and Gradle wrapper metadata detection
 - direct Maven Java target evidence for root and child build units
+- wrapper-first Maven and Gradle version/runtime JDK evidence
 - local JDK version, vendor, and runtime detection
 - host operating-system and architecture metadata
 - a structured project/module, analysis, and findings foundation
@@ -43,8 +44,10 @@ Run JMend from a JVM project:
 jmend check
 ```
 
-The output contains only detected, implemented information. Running `jmend`
-shows the branded command entry point and help.
+The output contains only detected, implemented information; roadmap
+placeholders are intentionally excluded. Build-tool evidence is optional when
+the selected wrapper or system command cannot be executed. Running `jmend`
+shows the branded command entry point and help for implemented commands only.
 
 ## Direction
 
