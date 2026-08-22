@@ -30,6 +30,7 @@ risks can be found before builds, CI, or production.
 - JVM project/root detection for Maven and Gradle build files
 - recursive Maven multi-module discovery
 - Maven and Gradle wrapper metadata detection
+- direct Maven Java target evidence for root and child build units
 - local JDK version, vendor, and runtime detection
 - host operating-system and architecture metadata
 - a structured project/module, analysis, and findings foundation

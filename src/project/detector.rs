@@ -1,4 +1,4 @@
-use super::{BuildTool, BuildWrapper, Project, maven};
+use super::{BuildTool, BuildWrapper, Project, ProjectModule, maven};
 use std::{
     error::Error,
     fmt, fs, io,
@@ -8,20 +8,42 @@ use std::{
 pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
     for candidate in start.ancestors() {
         if let Some(build_tool) = detect_build_tool(candidate)? {
-            let modules = match build_tool {
-                BuildTool::Maven => maven::discover_modules(candidate)?,
-                BuildTool::Gradle | BuildTool::Sbt | BuildTool::Mill | BuildTool::Ant => Vec::new(),
+            let (root_module, modules) = match build_tool {
+                BuildTool::Maven => {
+                    let model = maven::inspect_project(candidate)?;
+                    (model.root_module, model.modules)
+                }
+                BuildTool::Gradle | BuildTool::Sbt | BuildTool::Mill | BuildTool::Ant => {
+                    (root_module(candidate, build_tool)?, Vec::new())
+                }
             };
             return Ok(Project {
                 root: candidate.to_path_buf(),
                 build_tool,
                 wrapper: detect_wrapper(candidate, build_tool)?,
+                root_module,
                 modules,
             });
         }
     }
 
     Err(ProjectDetectionError::Unsupported(start.to_path_buf()))
+}
+
+fn root_module(root: &Path, build_tool: BuildTool) -> Result<ProjectModule, ProjectDetectionError> {
+    let mut module = ProjectModule::new(root.to_path_buf());
+    module.build_file = build_tool
+        .descriptor()
+        .build_files()
+        .iter()
+        .map(|name| root.join(name))
+        .find_map(|path| match is_file(&path) {
+            Ok(true) => Some(Ok(path)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .transpose()?;
+    Ok(module)
 }
 
 fn detect_build_tool(root: &Path) -> Result<Option<BuildTool>, ProjectDetectionError> {
@@ -233,6 +255,29 @@ mod tests {
 
         assert_eq!(project.build_tool, BuildTool::Maven);
         assert_eq!(project.wrapper, None);
+        let canonical_root = fs::canonicalize(&directory.0)?;
+        assert_eq!(project.root_module.path, canonical_root);
+        assert_eq!(
+            project.root_module.build_file,
+            Some(project.root_module.path.join("pom.xml"))
+        );
+        assert_eq!(project.root_module.name.as_deref(), Some("fixture"));
+        assert!(project.modules.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_single_module_root_target_without_creating_child_module()
+    -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write_file(
+            "pom.xml",
+            "<project><artifactId>application</artifactId><properties><maven.compiler.release>21</maven.compiler.release></properties></project>",
+        )?;
+
+        let project = detect(&directory.0)?;
+
+        assert_eq!(project.root_module.jvm_targets[0].version, "21");
         assert!(project.modules.is_empty());
         Ok(())
     }
@@ -246,13 +291,15 @@ mod tests {
         )?;
         directory.write_file(
             "api/pom.xml",
-            "<project><artifactId>public-api</artifactId></project>",
+            "<project><artifactId>public-api</artifactId><properties><maven.compiler.release>21</maven.compiler.release></properties></project>",
         )?;
 
         let project = detect(&directory.0)?;
 
         assert_eq!(project.modules.len(), 1);
         assert_eq!(project.modules[0].name.as_deref(), Some("public-api"));
+        assert_eq!(project.modules[0].jvm_targets.len(), 1);
+        assert_eq!(project.modules[0].jvm_targets[0].version, "21");
         Ok(())
     }
 

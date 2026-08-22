@@ -19,6 +19,7 @@ The `0.1` code currently implements:
 
 - upward JVM project/root detection using Maven and Gradle build files;
 - recursive discovery of direct Maven `<modules>` declarations;
+- direct Maven Java target evidence for root and child build units;
 - Maven and Gradle wrapper executable/metadata detection;
 - local JDK version, vendor, and runtime detection;
 - host operating-system and architecture metadata;
@@ -29,8 +30,9 @@ The `0.1` code currently implements:
 
 Modeled language, framework, capability, or build-tool variants do not mean
 they are detected or analyzed. In particular, Gradle multi-project discovery,
-language/framework detection, project Java targets, build-tool runtime data,
-dependency/classpath inspection, and findings remain unfinished.
+language/framework detection, Gradle and effective/inherited Maven target
+resolution, build-tool runtime data, dependency/classpath inspection, and
+findings remain unfinished.
 
 ## Delivery principles
 

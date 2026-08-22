@@ -1,4 +1,4 @@
-use super::ProjectModule;
+use super::{JvmLanguageKind, JvmTarget, ProjectModule};
 use quick_xml::{Reader, escape::unescape, events::Event};
 use std::{
     collections::HashSet,
@@ -9,10 +9,17 @@ use std::{
 
 const POM_FILE: &str = "pom.xml";
 
-pub fn discover_modules(root: &Path) -> Result<Vec<ProjectModule>, MavenModelError> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MavenProjectModel {
+    pub root_module: ProjectModule,
+    pub modules: Vec<ProjectModule>,
+}
+
+pub fn inspect_project(root: &Path) -> Result<MavenProjectModel, MavenModelError> {
     let root = canonicalize(root)?;
     let root_pom = root.join(POM_FILE);
     let model = read_pom(&root_pom)?;
+    let root_module = module_from_model(root.clone(), root_pom.clone(), &model);
     let mut state = DiscoveryState {
         modules: Vec::new(),
         discovered: HashSet::new(),
@@ -20,7 +27,14 @@ pub fn discover_modules(root: &Path) -> Result<Vec<ProjectModule>, MavenModelErr
     };
 
     discover_declared(&root_pom, &model.modules, &mut state)?;
-    Ok(state.modules)
+    Ok(MavenProjectModel {
+        root_module,
+        modules: state.modules,
+    })
+}
+
+pub fn discover_modules(root: &Path) -> Result<Vec<ProjectModule>, MavenModelError> {
+    Ok(inspect_project(root)?.modules)
 }
 
 struct DiscoveryState {
@@ -57,9 +71,7 @@ fn discover_declared(
         require_pom(&pom_path, declaring_pom)?;
         let model = read_pom(&pom_path)?;
 
-        let mut module = ProjectModule::new(module_path.clone());
-        module.name = model.artifact_id;
-        module.build_file = Some(pom_path.clone());
+        let module = module_from_model(module_path.clone(), pom_path.clone(), &model);
         state.modules.push(module);
 
         state.active.insert(module_path.clone());
@@ -69,6 +81,18 @@ fn discover_declared(
     }
 
     Ok(())
+}
+
+fn module_from_model(path: PathBuf, pom_path: PathBuf, model: &PomStructure) -> ProjectModule {
+    let mut module = ProjectModule::new(path);
+    module.name.clone_from(&model.artifact_id);
+    module.build_file = Some(pom_path);
+    if let Some(version) = model.jvm_target() {
+        module
+            .jvm_targets
+            .push(JvmTarget::new(JvmLanguageKind::Java, version));
+    }
+    module
 }
 
 fn require_directory(path: &Path, declaring_pom: &Path) -> Result<(), MavenModelError> {
@@ -122,12 +146,43 @@ fn canonicalize(path: &Path) -> Result<PathBuf, MavenModelError> {
 struct PomStructure {
     artifact_id: Option<String>,
     modules: Vec<String>,
+    compiler: MavenCompilerConfiguration,
+}
+
+impl PomStructure {
+    /// Deterministic direct-POM precedence:
+    /// plugin release > release property > plugin target > target property.
+    fn jvm_target(&self) -> Option<String> {
+        [
+            self.compiler.plugin_release.as_deref(),
+            self.compiler.release_property.as_deref(),
+            self.compiler.plugin_target.as_deref(),
+            self.compiler.target_property.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .next()
+        .and_then(|value| resolve_target(value, &self.compiler))
+    }
+}
+
+#[derive(Debug, Default)]
+struct MavenCompilerConfiguration {
+    release_property: Option<String>,
+    target_property: Option<String>,
+    plugin_release: Option<String>,
+    plugin_target: Option<String>,
 }
 
 #[derive(Clone, Copy)]
 enum Capture {
     ArtifactId,
     Module,
+    ReleaseProperty,
+    TargetProperty,
+    PluginArtifactId,
+    PluginRelease,
+    PluginTarget,
 }
 
 fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
@@ -140,6 +195,10 @@ fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
     let mut buffer = Vec::new();
     let mut depth = 0_u32;
     let mut modules_depth = None;
+    let mut element_path = Vec::<Vec<u8>>::new();
+    let mut plugin_artifact_id = None;
+    let mut plugin_release = None;
+    let mut plugin_target = None;
     let mut capture = None;
     let mut captured = String::new();
     let mut structure = PomStructure::default();
@@ -149,16 +208,38 @@ fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Start(element)) => {
                 depth += 1;
-                let name = element.local_name();
-                if name.as_ref() == b"project" && depth == 1 {
+                let name = element.local_name().as_ref().to_vec();
+                element_path.push(name.clone());
+                if name == b"project" && depth == 1 {
                     saw_project = true;
-                } else if name.as_ref() == b"modules" && depth == 2 {
+                } else if name == b"modules" && depth == 2 {
                     modules_depth = Some(depth);
-                } else if name.as_ref() == b"artifactId" && depth == 2 {
+                } else if name == b"artifactId" && depth == 2 {
                     capture = Some(Capture::ArtifactId);
                     captured.clear();
-                } else if name.as_ref() == b"module" && modules_depth == Some(2) && depth == 3 {
+                } else if name == b"module" && modules_depth == Some(2) && depth == 3 {
                     capture = Some(Capture::Module);
+                    captured.clear();
+                } else if path_is(
+                    &element_path,
+                    &[b"project", b"properties", b"maven.compiler.release"],
+                ) {
+                    capture = Some(Capture::ReleaseProperty);
+                    captured.clear();
+                } else if path_is(
+                    &element_path,
+                    &[b"project", b"properties", b"maven.compiler.target"],
+                ) {
+                    capture = Some(Capture::TargetProperty);
+                    captured.clear();
+                } else if in_build_plugin(&element_path) && name == b"artifactId" {
+                    capture = Some(Capture::PluginArtifactId);
+                    captured.clear();
+                } else if in_compiler_configuration(&element_path, b"release") {
+                    capture = Some(Capture::PluginRelease);
+                    captured.clear();
+                } else if in_compiler_configuration(&element_path, b"target") {
+                    capture = Some(Capture::PluginTarget);
                     captured.clear();
                 }
             }
@@ -191,14 +272,14 @@ fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
                 });
             }
             Ok(Event::End(element)) => {
-                let name = element.local_name();
-                if name.as_ref() == b"artifactId"
+                let name = element.local_name().as_ref().to_vec();
+                if name == b"artifactId"
                     && depth == 2
                     && matches!(capture, Some(Capture::ArtifactId))
                 {
                     structure.artifact_id = non_empty(&captured);
                     capture = None;
-                } else if name.as_ref() == b"module"
+                } else if name == b"module"
                     && depth == 3
                     && matches!(capture, Some(Capture::Module))
                 {
@@ -208,9 +289,39 @@ fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
                     })?;
                     structure.modules.push(module);
                     capture = None;
-                } else if name.as_ref() == b"modules" && depth == 2 {
+                } else if name == b"maven.compiler.release"
+                    && matches!(capture, Some(Capture::ReleaseProperty))
+                {
+                    structure.compiler.release_property = non_empty(&captured);
+                    capture = None;
+                } else if name == b"maven.compiler.target"
+                    && matches!(capture, Some(Capture::TargetProperty))
+                {
+                    structure.compiler.target_property = non_empty(&captured);
+                    capture = None;
+                } else if name == b"artifactId"
+                    && matches!(capture, Some(Capture::PluginArtifactId))
+                {
+                    plugin_artifact_id = non_empty(&captured);
+                    capture = None;
+                } else if name == b"release" && matches!(capture, Some(Capture::PluginRelease)) {
+                    plugin_release = non_empty(&captured);
+                    capture = None;
+                } else if name == b"target" && matches!(capture, Some(Capture::PluginTarget)) {
+                    plugin_target = non_empty(&captured);
+                    capture = None;
+                } else if name == b"plugin" && in_build_plugin(&element_path) {
+                    if plugin_artifact_id.as_deref() == Some("maven-compiler-plugin") {
+                        structure.compiler.plugin_release = plugin_release.take();
+                        structure.compiler.plugin_target = plugin_target.take();
+                    }
+                    plugin_artifact_id = None;
+                    plugin_release = None;
+                    plugin_target = None;
+                } else if name == b"modules" && depth == 2 {
                     modules_depth = None;
                 }
+                element_path.pop();
                 depth = depth.saturating_sub(1);
             }
             Ok(Event::Eof) => break,
@@ -239,6 +350,53 @@ fn read_pom(path: &Path) -> Result<PomStructure, MavenModelError> {
     }
 
     Ok(structure)
+}
+
+fn path_is(path: &[Vec<u8>], expected: &[&[u8]]) -> bool {
+    path.len() == expected.len()
+        && path
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| actual.as_slice() == *expected)
+}
+
+fn in_build_plugin(path: &[Vec<u8>]) -> bool {
+    path.len() >= 4
+        && path[0].as_slice() == b"project"
+        && path[1].as_slice() == b"build"
+        && path[2].as_slice() == b"plugins"
+        && path[3].as_slice() == b"plugin"
+}
+
+fn in_compiler_configuration(path: &[Vec<u8>], setting: &[u8]) -> bool {
+    path_is(
+        path,
+        &[
+            b"project",
+            b"build",
+            b"plugins",
+            b"plugin",
+            b"configuration",
+            setting,
+        ],
+    )
+}
+
+fn resolve_target(value: &str, compiler: &MavenCompilerConfiguration) -> Option<String> {
+    let value = value.trim();
+    let resolved = match value {
+        "${maven.compiler.release}" => compiler.release_property.as_deref()?,
+        "${maven.compiler.target}" => compiler.target_property.as_deref()?,
+        _ if value.contains("${") => return None,
+        _ => value,
+    };
+
+    is_java_target(resolved).then(|| resolved.to_string())
+}
+
+fn is_java_target(value: &str) -> bool {
+    let numeric = value.strip_prefix("1.").unwrap_or(value);
+    !numeric.is_empty() && numeric.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -310,6 +468,7 @@ impl Error for MavenModelError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::JvmTarget;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -356,12 +515,104 @@ mod tests {
         )
     }
 
+    fn pom_with_body(artifact_id: &str, body: &str) -> String {
+        format!(
+            "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion><artifactId>{artifact_id}</artifactId>{body}</project>"
+        )
+    }
+
+    fn compiler_plugin(configuration: &str) -> String {
+        format!(
+            "<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><configuration>{configuration}</configuration></plugin></plugins></build>"
+        )
+    }
+
+    fn discover_single_target(body: &str) -> Result<Option<JvmTarget>, Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(POM_FILE, &pom("root", &["module"]))?;
+        directory.write("module/pom.xml", &pom_with_body("module", body))?;
+
+        Ok(discover_modules(&directory.0)?
+            .into_iter()
+            .next()
+            .and_then(|module| module.jvm_targets.into_iter().next()))
+    }
+
     #[test]
     fn project_without_declared_modules_is_empty() -> Result<(), Box<dyn Error>> {
         let directory = TestDirectory::new()?;
         directory.write(POM_FILE, &pom("root", &[]))?;
 
-        assert!(discover_modules(&directory.0)?.is_empty());
+        let project = inspect_project(&directory.0)?;
+
+        assert!(project.modules.is_empty());
+        assert_eq!(project.root_module.name.as_deref(), Some("root"));
+        assert_eq!(project.root_module.path, fs::canonicalize(&directory.0)?);
+        assert_eq!(
+            project.root_module.build_file,
+            Some(fs::canonicalize(&directory.0)?.join(POM_FILE))
+        );
+        assert!(project.root_module.jvm_targets.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn collects_release_property_for_single_module_root() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body(
+                "application",
+                "<properties><maven.compiler.release>21</maven.compiler.release></properties>",
+            ),
+        )?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert_eq!(
+            project.root_module.jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "21")]
+        );
+        assert!(project.modules.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn collects_plugin_release_for_single_module_root() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body("application", &compiler_plugin("<release>17</release>")),
+        )?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert_eq!(
+            project.root_module.jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "17")]
+        );
+        assert!(project.modules.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn collects_target_property_for_single_module_root() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body(
+                "application",
+                "<properties><maven.compiler.target>11</maven.compiler.target></properties>",
+            ),
+        )?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert_eq!(
+            project.root_module.jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "11")]
+        );
+        assert!(project.modules.is_empty());
         Ok(())
     }
 
@@ -379,7 +630,224 @@ mod tests {
         assert_eq!(modules[0].build_file, Some(modules[0].path.join(POM_FILE)));
         assert!(modules[0].languages.is_empty());
         assert!(modules[0].frameworks.is_empty());
-        assert_eq!(modules[0].target_runtime, None);
+        assert!(modules[0].jvm_targets.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn collects_maven_compiler_release_property() -> Result<(), Box<dyn Error>> {
+        let target = discover_single_target(
+            "<properties><maven.compiler.release>21</maven.compiler.release></properties>",
+        )?;
+
+        assert_eq!(target, Some(JvmTarget::new(JvmLanguageKind::Java, "21")));
+        Ok(())
+    }
+
+    #[test]
+    fn collects_maven_compiler_plugin_release() -> Result<(), Box<dyn Error>> {
+        let target = discover_single_target(&compiler_plugin("<release>17</release>"))?;
+
+        assert_eq!(target, Some(JvmTarget::new(JvmLanguageKind::Java, "17")));
+        Ok(())
+    }
+
+    #[test]
+    fn collects_maven_compiler_target_property() -> Result<(), Box<dyn Error>> {
+        let target = discover_single_target(
+            "<properties><maven.compiler.target>11</maven.compiler.target></properties>",
+        )?;
+
+        assert_eq!(target, Some(JvmTarget::new(JvmLanguageKind::Java, "11")));
+        Ok(())
+    }
+
+    #[test]
+    fn collects_maven_compiler_plugin_target() -> Result<(), Box<dyn Error>> {
+        let target = discover_single_target(&compiler_plugin("<target>1.8</target>"))?;
+
+        assert_eq!(target, Some(JvmTarget::new(JvmLanguageKind::Java, "1.8")));
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_release_has_precedence_over_all_other_declarations() -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><maven.compiler.release>20</maven.compiler.release><maven.compiler.target>11</maven.compiler.target></properties>{}",
+            compiler_plugin("<release>21</release><target>17</target>")
+        );
+
+        assert_eq!(
+            discover_single_target(&body)?,
+            Some(JvmTarget::new(JvmLanguageKind::Java, "21"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn release_property_has_precedence_over_plugin_target() -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><maven.compiler.release>21</maven.compiler.release></properties>{}",
+            compiler_plugin("<target>17</target>")
+        );
+
+        assert_eq!(
+            discover_single_target(&body)?,
+            Some(JvmTarget::new(JvmLanguageKind::Java, "21"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_target_has_precedence_over_target_property() -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><maven.compiler.target>11</maven.compiler.target></properties>{}",
+            compiler_plugin("<target>17</target>")
+        );
+
+        assert_eq!(
+            discover_single_target(&body)?,
+            Some(JvmTarget::new(JvmLanguageKind::Java, "17"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolves_compiler_plugin_reference_to_supported_target_property()
+    -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><maven.compiler.release>21</maven.compiler.release></properties>{}",
+            compiler_plugin("<release>${maven.compiler.release}</release>")
+        );
+
+        assert_eq!(
+            discover_single_target(&body)?,
+            Some(JvmTarget::new(JvmLanguageKind::Java, "21"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn preserves_different_and_missing_targets_per_module() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body(
+                "root",
+                "<properties><maven.compiler.release>21</maven.compiler.release></properties><modules><module>module-a</module><module>module-b</module><module>module-c</module></modules>",
+            ),
+        )?;
+        directory.write(
+            "module-a/pom.xml",
+            &pom_with_body(
+                "module-a",
+                "<properties><maven.compiler.release>17</maven.compiler.release></properties>",
+            ),
+        )?;
+        directory.write(
+            "module-b/pom.xml",
+            &pom_with_body("module-b", &compiler_plugin("<target>21</target>")),
+        )?;
+        directory.write("module-c/pom.xml", &pom("module-c", &[]))?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert_eq!(
+            project.root_module.jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "21")]
+        );
+        assert_eq!(
+            project.modules[0].jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "17")]
+        );
+        assert_eq!(
+            project.modules[1].jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "21")]
+        );
+        assert!(project.modules[2].jvm_targets.is_empty());
+        assert_eq!(project.modules.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn aggregation_does_not_propagate_root_target_to_child() -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body(
+                "root",
+                "<properties><maven.compiler.release>21</maven.compiler.release></properties><modules><module>child</module></modules>",
+            ),
+        )?;
+        directory.write("child/pom.xml", &pom("child", &[]))?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert_eq!(
+            project.root_module.jvm_targets,
+            [JvmTarget::new(JvmLanguageKind::Java, "21")]
+        );
+        assert!(project.modules[0].jvm_targets.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn declared_local_parent_is_not_treated_as_resolved_effective_model()
+    -> Result<(), Box<dyn Error>> {
+        let directory = TestDirectory::new()?;
+        directory.write(
+            POM_FILE,
+            &pom_with_body(
+                "root",
+                "<groupId>example</groupId><version>1</version><properties><maven.compiler.release>21</maven.compiler.release></properties><modules><module>child</module></modules>",
+            ),
+        )?;
+        directory.write(
+            "child/pom.xml",
+            "<project><modelVersion>4.0.0</modelVersion><parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version><relativePath>..</relativePath></parent><artifactId>child</artifactId></project>",
+        )?;
+
+        let project = inspect_project(&directory.0)?;
+
+        assert!(project.modules[0].jvm_targets.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn source_only_and_java_version_do_not_imply_a_target() -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><java.version>21</java.version></properties>{}",
+            compiler_plugin("<source>17</source>")
+        );
+
+        assert_eq!(discover_single_target(&body)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn unresolved_or_non_numeric_target_remains_unknown() -> Result<(), Box<dyn Error>> {
+        let body = format!(
+            "<properties><java.version>21</java.version><maven.compiler.target>17</maven.compiler.target></properties>{}",
+            compiler_plugin("<release>${java.version}</release><target>11</target>")
+        );
+
+        assert_eq!(discover_single_target(&body)?, None);
+        assert_eq!(
+            discover_single_target(
+                "<properties><maven.compiler.target>not-a-version</maven.compiler.target></properties>"
+            )?,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ignores_compiler_configuration_from_other_plugins() -> Result<(), Box<dyn Error>> {
+        let target = discover_single_target(
+            "<build><plugins><plugin><artifactId>other-plugin</artifactId><configuration><release>21</release><target>17</target></configuration></plugin></plugins></build>",
+        )?;
+
+        assert_eq!(target, None);
         Ok(())
     }
 

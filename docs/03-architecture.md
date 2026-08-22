@@ -85,12 +85,20 @@ operation returns a `CheckResult`; it does not format output.
 
 ### Project and runtime
 
-`project` owns the normalized project/module context and build-tool metadata.
-Detection walks upward to the nearest supported root. Maven discovery follows
-direct top-level `<modules>` declarations recursively, represents aggregator
-and leaf modules once, and excludes the root from the module count. It does not
-evaluate profiles, interpolation, inheritance, or an effective Maven model.
-Gradle multi-project discovery is not implemented.
+`project` owns the normalized project/build-unit context and build-tool
+metadata. A `Project` represents the detected build or workspace. Its
+`root_module` represents the root build unit and preserves evidence from the
+root build file. Its `modules` collection contains declared child build units.
+The root is deliberately excluded from `modules.len()`, preserving the compact
+CLI's existing child-module count: a single-module build has no count suffix,
+while three declared children are shown as three modules. `build_units()`
+iterates over the root and children when a derived view needs all build units.
+
+Detection walks upward to the nearest supported root. Maven aggregation follows
+direct top-level `<modules>` declarations recursively and represents child
+aggregators and leaves once. It does not evaluate profiles, general property
+interpolation, inheritance, or an effective Maven model. Gradle multi-project
+discovery is not implemented.
 
 The model can represent Maven, Gradle, SBT, Mill, and Ant; detection currently
 supports only Maven and Gradle build files. It can represent Java, Kotlin,
@@ -100,6 +108,36 @@ framework detector exists yet.
 The installed JDK is separate from a module's Java target. Current JDK
 detection obtains `java.version`, `java.vendor`, and `java.runtime.name` from
 standard JVM properties. It does not infer project targets or GraalVM readiness.
+
+`ProjectModule.jvm_targets` is the authoritative location for JVM target
+evidence; `Project` has no target field. The root build unit and every child
+therefore retain independent evidence. Any future project-wide summary must be
+derived rather than becoming a second source of truth.
+
+Maven inspection currently collects a direct Java `JvmTarget` only from
+resolvable compiler declarations in that build unit's own POM. Precedence is
+deterministic: Maven Compiler Plugin `<release>`, `maven.compiler.release`,
+Maven Compiler Plugin `<target>`, then `maven.compiler.target`. Release
+semantics therefore win over target semantics. An unresolved higher-priority
+declaration makes the direct target unknown rather than allowing a fallback.
+Exact plugin references to the two supported properties are resolved; other
+expressions remain unknown. `java.version` and `<source>` alone never imply a
+bytecode target. This is evidence collection only and is not compared with the
+JDK by this layer.
+
+Direct target evidence is explicitly declared and resolved from the build
+unit's own metadata. Effective target evidence would include values produced by
+build-tool inheritance and effective configuration. JMend does not yet claim
+to compute the Maven effective target. The generic `JvmTarget` can gain
+provenance and declared/effective resolution metadata without exposing Maven
+property or XML concepts outside the Maven layer.
+
+Maven aggregation and inheritance are separate relationships. A child listed
+under `<modules>` does not necessarily inherit from that aggregator. JMend does
+not copy root target evidence to children, even when a local `<parent>` is
+declared; reliable parent/property/plugin inheritance is deferred until an
+appropriately scoped effective-model implementation exists. Unknown evidence
+is preferred to an incorrect inherited target.
 
 ### Analysis and findings
 
