@@ -109,6 +109,29 @@ The installed JDK is separate from a module's Java target. Current JDK
 detection obtains `java.version`, `java.vendor`, and `java.runtime.name` from
 standard JVM properties. It does not infer project targets or GraalVM readiness.
 
+`ProjectContext.build_tool_runtime` optionally records the selected build tool,
+version, executable, wrapper/system source, and execution JDK. This is a third
+independent fact alongside the JDK running JMend and each build unit's JVM
+target. For example, JMend JDK 25, Maven JDK 21, and module target 17 remain
+three separate values and produce no compatibility conclusion in this layer.
+
+Build-tool selection is wrapper-first. JMend prefers `mvnw`/`mvnw.cmd` or
+`gradlew`/`gradlew.bat` according to the host platform and falls back to `mvn`
+or `gradle` only when no platform-usable wrapper was detected. A selected
+wrapper that fails is not silently replaced with a system tool. Windows
+commands are launched through `cmd.exe /C`; Unix commands are launched
+directly. Selection, process execution, Maven parsing, and Gradle parsing are
+separate responsibilities. One check performs at most one build-tool version
+query and reuses its structured result.
+
+Maven `--version` supplies the Maven version and Java version/vendor when
+present. Gradle `--version` supplies the Gradle version and either its legacy
+`JVM` or modern `Launcher JVM` metadata. Path-like runtime fields and other
+printed details are not collected merely because they exist. Missing JDK
+metadata remains optional. A missing executable, start failure, nonzero exit,
+or output without a reliable tool version makes build-tool runtime evidence
+unavailable; it does not invalidate project detection or create a finding.
+
 `ProjectModule.jvm_targets` is the authoritative location for JVM target
 evidence; `Project` has no target field. The root build unit and every child
 therefore retain independent evidence. Any future project-wide summary must be
@@ -157,9 +180,11 @@ must remain findings rather than application failures.
 ### Output
 
 `output` transforms a complete domain result for a consumer. The compact check
-currently shows real host, project/build-tool, module-count, and JDK metadata;
-planned rows are visibly marked planned. It must not imply that absent
-analyzers have passed.
+shows only collected host, project, module-count, target, runtime JDK, and
+build-tool evidence plus findings actually generated. It never renders roadmap
+placeholders or implies that absent analyzers passed. The global `HEALTHY`
+label is omitted while analyzer coverage is limited; the footer is a factual
+finding count.
 
 Future CLI, TUI, user-facing CI, JSON, and SARIF should consume the same
 structured analysis result. The TUI is the detailed exploration interface,

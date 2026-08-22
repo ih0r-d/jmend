@@ -2,10 +2,12 @@ use std::{fmt, path::PathBuf};
 
 const MAVEN_BUILD_FILES: &[&str] = &["pom.xml"];
 const MAVEN_WRAPPER_EXECUTABLES: &[&str] = &["mvnw", "mvnw.cmd"];
+const MAVEN_WINDOWS_WRAPPER_EXECUTABLES: &[&str] = &["mvnw.cmd", "mvnw"];
 const MAVEN_WRAPPER_METADATA: &[&str] = &[".mvn", "wrapper", "maven-wrapper.properties"];
 
 const GRADLE_BUILD_FILES: &[&str] = &["build.gradle", "build.gradle.kts"];
 const GRADLE_WRAPPER_EXECUTABLES: &[&str] = &["gradlew", "gradlew.bat"];
+const GRADLE_WINDOWS_WRAPPER_EXECUTABLES: &[&str] = &["gradlew.bat", "gradlew"];
 const GRADLE_WRAPPER_METADATA: &[&str] = &["gradle", "wrapper", "gradle-wrapper.properties"];
 
 const SBT_BUILD_FILES: &[&str] = &["build.sbt"];
@@ -60,6 +62,21 @@ impl BuildTool {
             },
         }
     }
+
+    pub const fn wrapper_executables_for(
+        self,
+        platform: crate::process::CommandPlatform,
+    ) -> &'static [&'static str] {
+        match (self, platform) {
+            (Self::Maven, crate::process::CommandPlatform::Windows) => {
+                MAVEN_WINDOWS_WRAPPER_EXECUTABLES
+            }
+            (Self::Gradle, crate::process::CommandPlatform::Windows) => {
+                GRADLE_WINDOWS_WRAPPER_EXECUTABLES
+            }
+            _ => self.descriptor().wrapper_executables(),
+        }
+    }
 }
 
 impl fmt::Display for BuildTool {
@@ -104,4 +121,30 @@ impl BuildToolDescriptor {
 pub struct BuildWrapper {
     pub executable: PathBuf,
     pub metadata: Option<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::process::CommandPlatform;
+
+    #[test]
+    fn wrapper_candidates_prefer_platform_native_scripts() {
+        assert_eq!(
+            BuildTool::Maven.wrapper_executables_for(CommandPlatform::Unix)[0],
+            "mvnw"
+        );
+        assert_eq!(
+            BuildTool::Maven.wrapper_executables_for(CommandPlatform::Windows)[0],
+            "mvnw.cmd"
+        );
+        assert_eq!(
+            BuildTool::Gradle.wrapper_executables_for(CommandPlatform::Unix)[0],
+            "gradlew"
+        );
+        assert_eq!(
+            BuildTool::Gradle.wrapper_executables_for(CommandPlatform::Windows)[0],
+            "gradlew.bat"
+        );
+    }
 }

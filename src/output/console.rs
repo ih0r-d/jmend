@@ -4,13 +4,11 @@ use anstyle::{AnsiColor, Style};
 use std::io::{self, Write};
 
 const TITLE: Style = AnsiColor::BrightCyan.on_default().bold();
-const SUCCESS: Style = AnsiColor::Green.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const MUTED: Style = AnsiColor::BrightBlack.on_default();
 const LABEL: Style = Style::new().bold();
 const LABEL_WIDTH: usize = 16;
-const CHECK_LABEL_WIDTH: usize = LABEL_WIDTH - 2;
 const PRIMARY_WIDTH: usize = 14;
 
 const BANNER: &str = include_str!("banner.txt");
@@ -32,8 +30,8 @@ pub fn render_root(help: &str) -> io::Result<()> {
 fn render(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
     render_compact_header(output, result)?;
     render_fingerprint(output, result)?;
-    render_analyzers(output, result)?;
-    render_counts(output, result)?;
+    render_context_evidence(output, result)?;
+    render_findings_count(output, result)?;
 
     Ok(())
 }
@@ -55,10 +53,9 @@ fn render_banner(output: &mut dyn Write) -> io::Result<()> {
 }
 
 fn render_compact_header(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
-    let (status, status_style) = diagnostic_status(result);
     writeln!(
         output,
-        "{TITLE}JMend{TITLE:#} {MUTED}v{}{MUTED:#} {MUTED}·{MUTED:#} {} {} {MUTED}·{MUTED:#} {status_style}{status}{status_style:#}",
+        "{TITLE}JMend{TITLE:#} {MUTED}v{}{MUTED:#} {MUTED}·{MUTED:#} {} {}",
         env!("CARGO_PKG_VERSION"),
         display_os(&result.host.os),
         display_architecture(&result.host.architecture)
@@ -82,28 +79,6 @@ fn display_architecture(architecture: &str) -> &str {
     }
 }
 
-fn diagnostic_status(result: &CheckResult) -> (&'static str, Style) {
-    let has_errors = result.findings.iter().any(|finding| {
-        matches!(
-            finding.severity,
-            FindingSeverity::Error | FindingSeverity::Critical
-        )
-    });
-
-    let has_warnings = result
-        .findings
-        .iter()
-        .any(|finding| finding.severity == FindingSeverity::Warning);
-
-    if has_errors {
-        ("ISSUES FOUND", ERROR)
-    } else if has_warnings {
-        ("WARNINGS", WARNING)
-    } else {
-        ("HEALTHY", SUCCESS)
-    }
-}
-
 fn render_fingerprint(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
     let project = &result.project_context.project;
     let module_count = match project.modules.len() {
@@ -119,6 +94,23 @@ fn render_fingerprint(output: &mut dyn Write, result: &CheckResult) -> io::Resul
         JdkStatus::NotFound => render_row(output, "JDK", "Not found", None)?,
         JdkStatus::Unavailable(reason) => {
             render_row(output, "JDK", &format!("Unavailable: {reason}"), None)?
+        }
+    }
+
+    let targets = aggregate_targets(project);
+    if !targets.is_empty() {
+        render_row(output, "Target", &targets.join(", "), None)?;
+    }
+
+    if let Some(runtime) = &result.project_context.build_tool_runtime {
+        render_row(
+            output,
+            "Build Tool",
+            &format!("{} {}", runtime.tool, runtime.version),
+            Some(&runtime.source.to_string()),
+        )?;
+        if let Some(jdk) = &runtime.jdk {
+            render_row(output, "Build JDK", &jdk.version, jdk.vendor.as_deref())?;
         }
     }
 
@@ -140,26 +132,31 @@ fn render_row(
     }
 }
 
-fn render_analyzers(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
+fn aggregate_targets(project: &crate::project::Project) -> Vec<String> {
+    let mut targets = Vec::new();
+    for target in project.build_units().flat_map(|module| &module.jvm_targets) {
+        let value = format!("{} {}", target.language, target.version);
+        if !targets.contains(&value) {
+            targets.push(value);
+        }
+    }
+    targets
+}
+
+fn render_context_evidence(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
     let project = &result.project_context.project;
 
     let languages = aggregate_languages(project)
         .into_iter()
         .map(|language| (language.kind.to_string(), language.version.as_deref()))
         .collect::<Vec<_>>();
-    render_analyzer_values(output, "Languages", &languages)?;
+    render_evidence_values(output, "Languages", &languages)?;
 
     let frameworks = aggregate_frameworks(project)
         .into_iter()
         .map(|framework| (framework.kind.to_string(), framework.version.as_deref()))
         .collect::<Vec<_>>();
-    render_analyzer_values(output, "Frameworks", &frameworks)?;
-
-    for label in ["Dependencies", "Classpath", "GraalVM"] {
-        render_planned(output, label)?;
-    }
-
-    writeln!(output)
+    render_evidence_values(output, "Frameworks", &frameworks)
 }
 
 fn aggregate_languages(project: &crate::project::Project) -> Vec<&crate::project::JvmLanguage> {
@@ -182,18 +179,18 @@ fn aggregate_frameworks(project: &crate::project::Project) -> Vec<&crate::projec
     frameworks
 }
 
-fn render_analyzer_values(
+fn render_evidence_values(
     output: &mut dyn Write,
     label: &str,
     values: &[(String, Option<&str>)],
 ) -> io::Result<()> {
     if values.is_empty() {
-        return render_planned(output, label);
+        return Ok(());
     }
 
     for (index, (primary, secondary)) in values.iter().enumerate() {
         if index == 0 {
-            write!(output, "{SUCCESS}✓{SUCCESS:#} {label:<CHECK_LABEL_WIDTH$}")?;
+            write!(output, "{LABEL}{label:<LABEL_WIDTH$}{LABEL:#}")?;
         } else {
             write!(output, "{:<LABEL_WIDTH$}", "")?;
         }
@@ -212,37 +209,26 @@ fn render_value(output: &mut dyn Write, primary: &str, secondary: Option<&str>) 
     }
 }
 
-fn render_planned(output: &mut dyn Write, label: &str) -> io::Result<()> {
-    writeln!(
-        output,
-        "{MUTED}◇{MUTED:#} {label:<CHECK_LABEL_WIDTH$}{MUTED}Planned{MUTED:#}"
-    )
-}
-
-fn render_counts(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
-    let errors = result
+fn render_findings_count(output: &mut dyn Write, result: &CheckResult) -> io::Result<()> {
+    let count = result.findings.len();
+    let style = if result.findings.iter().any(|finding| {
+        matches!(
+            finding.severity,
+            FindingSeverity::Error | FindingSeverity::Critical
+        )
+    }) {
+        ERROR
+    } else if result
         .findings
         .iter()
-        .filter(|finding| {
-            matches!(
-                finding.severity,
-                FindingSeverity::Error | FindingSeverity::Critical
-            )
-        })
-        .count();
-
-    let warnings = result
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == FindingSeverity::Warning)
-        .count();
-
-    let error_style = if errors == 0 { MUTED } else { ERROR };
-    let warning_style = if warnings == 0 { MUTED } else { WARNING };
-    writeln!(
-        output,
-        "{error_style}{errors} errors{error_style:#} {MUTED}·{MUTED:#} {warning_style}{warnings} warnings{warning_style:#}"
-    )
+        .any(|finding| finding.severity == FindingSeverity::Warning)
+    {
+        WARNING
+    } else {
+        MUTED
+    };
+    let noun = if count == 1 { "finding" } else { "findings" };
+    writeln!(output, "{style}{count} {noun}{style:#}")
 }
 
 #[cfg(test)]
@@ -251,8 +237,9 @@ mod tests {
     use crate::{
         cli::Cli,
         project::{
-            BuildTool, BuildWrapper, JvmFramework, JvmFrameworkKind, JvmLanguage, JvmLanguageKind,
-            Project, ProjectContext, ProjectModule,
+            BuildTool, BuildToolRuntime, BuildToolSource, BuildWrapper, JvmFramework,
+            JvmFrameworkKind, JvmLanguage, JvmLanguageKind, JvmTarget, Project, ProjectContext,
+            ProjectModule,
         },
         runtime::{HostPlatform, JdkInfo},
     };
@@ -310,20 +297,21 @@ mod tests {
 
         assert!(output.contains(BANNER.trim()));
         assert!(output.contains(&format!("JMend v{}", env!("CARGO_PKG_VERSION"))));
-        assert!(output.contains("JVM and GraalVM diagnostics"));
+        assert!(
+            output.contains("JVM ecosystem diagnostics with GraalVM and Native Image awareness")
+        );
         assert!(output.contains("Usage: jmend [COMMAND]"));
         assert!(output.contains("check"));
         Ok(())
     }
 
     #[test]
-    fn renders_status_project_jdk_and_skipped_checks_without_duplicate_summary()
-    -> Result<(), Box<dyn Error>> {
+    fn renders_only_collected_fingerprint_evidence() -> Result<(), Box<dyn Error>> {
         let output = render_plain(&check_result(BuildTool::Maven, None))?;
 
         assert!(!output.contains('\u{1b}'));
         assert!(output.contains(&format!(
-            "JMend v{} · test-os future-arch · HEALTHY",
+            "JMend v{} · test-os future-arch",
             env!("CARGO_PKG_VERSION")
         )));
         assert!(!output.contains(BANNER.trim()));
@@ -334,25 +322,21 @@ mod tests {
         assert!(!output.contains("[0 modules]"));
         assert!(!output.contains("Maven project detected"));
         assert!(output.contains("JDK             25.0.2        [Oracle]"));
-        for area in [
+        for value in [
+            "Planned",
+            "Coming soon",
+            "Not analyzed yet",
             "Languages",
             "Frameworks",
             "Dependencies",
             "Classpath",
             "GraalVM",
+            "Native Image",
+            "HEALTHY",
         ] {
-            assert!(output.contains(&format!("◇ {area:<14}Planned")));
-        }
-        let overview_rows = output
-            .lines()
-            .filter(|line| line.starts_with('◇'))
-            .collect::<Vec<_>>();
-        assert_eq!(overview_rows.len(), 5);
-        assert!(!overview_rows.iter().any(|line| line.contains("Native")));
-        for value in ["Java [", "Kotlin", "Spring Boot", "Hibernate"] {
             assert!(!output.contains(value));
         }
-        assert!(output.contains("0 errors · 0 warnings"));
+        assert!(output.contains("0 findings"));
         Ok(())
     }
 
@@ -369,8 +353,7 @@ mod tests {
         let output = render_plain(&result)?;
 
         assert!(output.contains("JDK             21.0.2        [Example Custom JDK Vendor]"));
-        assert!(output.contains("◇ GraalVM       Planned"));
-        assert!(!output.contains("GraalVM CE"));
+        assert!(!output.contains("GraalVM"));
         Ok(())
     }
 
@@ -534,7 +517,7 @@ mod tests {
         let output = render_plain(&result)?;
 
         assert!(output.contains("Project         Gradle        [2 modules]"));
-        assert!(output.contains("✓ Languages     Java          [21]"));
+        assert!(output.contains("Languages       Java          [21]"));
         assert!(output.contains("                Kotlin        [2.2.0]"));
         Ok(())
     }
@@ -551,8 +534,78 @@ mod tests {
 
         let output = render_plain(&result)?;
 
-        assert!(output.contains("✓ Frameworks    Spring Boot   [4.1.0]"));
+        assert!(output.contains("Frameworks      Spring Boot   [4.1.0]"));
         assert!(output.contains("                Hibernate     [7.1.0]"));
+        Ok(())
+    }
+
+    #[test]
+    fn renders_build_runtime_jdk_and_target_as_independent_evidence() -> Result<(), Box<dyn Error>>
+    {
+        let mut result = check_result(BuildTool::Maven, None);
+        result.project_context.jdk = JdkStatus::Detected(JdkInfo {
+            version: "25".to_string(),
+            vendor: Some("JMend Runtime Vendor".to_string()),
+            runtime: None,
+        });
+        result
+            .project_context
+            .project
+            .root_module
+            .jvm_targets
+            .push(JvmTarget::new(JvmLanguageKind::Java, "17"));
+        result.project_context.build_tool_runtime = Some(BuildToolRuntime {
+            tool: BuildTool::Maven,
+            version: "3.9.11".to_string(),
+            executable: PathBuf::from("project/mvnw"),
+            source: BuildToolSource::Wrapper,
+            jdk: Some(JdkInfo {
+                version: "21".to_string(),
+                vendor: Some("Build Vendor".to_string()),
+                runtime: None,
+            }),
+        });
+
+        let output = render_plain(&result)?;
+
+        assert!(output.contains("JDK             25            [JMend Runtime Vendor]"));
+        assert!(output.contains("Target          Java 17"));
+        assert!(output.contains("Build Tool      Maven 3.9.11  [wrapper]"));
+        assert!(output.contains("Build JDK       21            [Build Vendor]"));
+        assert!(output.contains("0 findings"));
+        Ok(())
+    }
+
+    #[test]
+    fn mixed_module_targets_are_rendered_as_a_factual_aggregate() -> Result<(), Box<dyn Error>> {
+        let mut result = check_result(BuildTool::Maven, None);
+        result
+            .project_context
+            .project
+            .root_module
+            .jvm_targets
+            .push(JvmTarget::new(JvmLanguageKind::Java, "21"));
+        let mut child = ProjectModule::new(PathBuf::from("project/legacy"));
+        child
+            .jvm_targets
+            .push(JvmTarget::new(JvmLanguageKind::Java, "17"));
+        result.project_context.project.modules.push(child);
+
+        let output = render_plain(&result)?;
+
+        assert!(output.contains("Target          Java 21, Java 17"));
+        assert!(!output.lines().any(|line| line == "Target          Java 21"));
+        Ok(())
+    }
+
+    #[test]
+    fn missing_optional_build_runtime_does_not_render_misleading_rows() -> Result<(), Box<dyn Error>>
+    {
+        let result = check_result(BuildTool::Gradle, None);
+        let output = render_plain(&result)?;
+
+        assert!(!output.contains("Build Tool"));
+        assert!(!output.contains("Build JDK"));
         Ok(())
     }
 }

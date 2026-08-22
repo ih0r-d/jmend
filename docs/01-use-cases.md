@@ -10,9 +10,13 @@ jmend check
 
 Today JMend finds the nearest Maven or Gradle project root, discovers declared
 Maven modules recursively, records wrapper metadata, detects local JDK
-version/vendor/runtime and host OS/architecture, and renders a compact result.
-It does not yet resolve dependencies or emit diagnostic findings. Running
-`jmend` displays the branded CLI entry point and help; there is no TUI yet.
+version/vendor/runtime and host OS/architecture, and attempts one wrapper-first
+build-tool version query. When available, Maven or Gradle version and its
+execution-JDK evidence are retained separately from the JMend runtime JDK and
+module targets. The compact result contains only collected evidence and real
+findings, never roadmap placeholders. It does not yet resolve dependencies or
+emit diagnostic findings. Running `jmend` displays the branded CLI entry point
+and help for implemented commands; there is no TUI yet.
 
 ## Planned diagnostic workflows
 

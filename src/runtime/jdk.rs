@@ -1,7 +1,7 @@
 use super::JdkInfo;
+use crate::process::{CommandExecutor, CommandOutput, CommandRequest, ProcessExecutor};
 use std::fmt;
 use std::io::Error;
-use std::process::{Command, Output};
 
 #[derive(Debug)]
 pub enum JdkDetectionError {
@@ -30,24 +30,26 @@ impl fmt::Display for JdkDetectionError {
 impl std::error::Error for JdkDetectionError {}
 
 pub fn detect() -> Result<JdkInfo, JdkDetectionError> {
-    let output = Command::new("java")
-        .arg("-XshowSettings:properties")
-        .arg("-version")
-        .output()
-        .map_err(JdkDetectionError::Command)?;
+    detect_with(&ProcessExecutor)
+}
 
+pub fn detect_with(executor: &dyn CommandExecutor) -> Result<JdkInfo, JdkDetectionError> {
+    let request = CommandRequest::new("java", &["-XshowSettings:properties", "-version"]);
+    let output = executor
+        .execute(&request)
+        .map_err(JdkDetectionError::Command)?;
     parse_output(output)
 }
 
-fn parse_output(output: Output) -> Result<JdkInfo, JdkDetectionError> {
-    if !output.status.success() {
+fn parse_output(output: CommandOutput) -> Result<JdkInfo, JdkDetectionError> {
+    if !output.success {
         return Err(JdkDetectionError::CommandFailed {
-            status: output.status.code().unwrap_or(-1),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            status: output.status.unwrap_or(-1),
+            stderr: output.stderr,
         });
     }
 
-    parse_metadata(&String::from_utf8_lossy(&output.stderr))
+    parse_metadata(&format!("{}\n{}", output.stdout, output.stderr))
 }
 
 fn parse_metadata(output: &str) -> Result<JdkInfo, JdkDetectionError> {

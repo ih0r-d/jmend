@@ -1,11 +1,10 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     name = "jmend",
     version,
-    about = "JVM and GraalVM diagnostics, compatibility checks, and project analysis"
+    about = "JVM ecosystem diagnostics with GraalVM and Native Image awareness"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -14,20 +13,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Detect the current project and run available checks.
+    /// Collect the current project fingerprint and run available checks.
     Check,
-
-    /// Explain why a dependency is present.
-    Why { dependency: String },
-
-    /// Inspect a JAR file.
-    Inspect { jar: PathBuf },
-
-    /// Explain a JVM diagnostic input.
-    Explain { input: PathBuf },
-
-    /// Compare two JVM artifacts.
-    Compare { source: PathBuf, target: PathBuf },
 }
 
 #[cfg(test)]
@@ -39,6 +26,7 @@ mod tests {
     fn root_and_check_help_use_clap_help_flow() {
         let root_help = Cli::try_parse_from(["jmend", "--help"]).err();
         let check_help = Cli::try_parse_from(["jmend", "check", "--help"]).err();
+        let help_command = Cli::try_parse_from(["jmend", "help"]).err();
 
         assert_eq!(
             root_help.as_ref().map(clap::Error::kind),
@@ -48,7 +36,24 @@ mod tests {
             check_help.as_ref().map(clap::Error::kind),
             Some(ErrorKind::DisplayHelp)
         );
+        assert_eq!(
+            help_command.as_ref().map(clap::Error::kind),
+            Some(ErrorKind::DisplayHelp)
+        );
         assert!(root_help.is_some_and(|help| help.to_string().contains("check")));
+    }
+
+    #[test]
+    fn root_help_exposes_only_implemented_commands() {
+        let help = Cli::try_parse_from(["jmend", "--help"])
+            .err()
+            .expect("help should use clap display flow")
+            .to_string();
+
+        assert!(help.contains("check"));
+        for command in ["why", "inspect", "explain", "compare"] {
+            assert!(!help.contains(command));
+        }
     }
 
     #[test]
