@@ -3,10 +3,11 @@
 ## Current implementation boundary
 
 The current vertical slice detects the nearest Maven or Gradle project,
-discovers Maven modules, records wrapper metadata, detects the local JDK and
-host platform, creates a structured `CheckResult`, and renders `jmend check`.
+discovers Maven modules and compiled outputs, records wrapper metadata, detects
+the local JDK and host platform, creates structured artifact/static bytecode
+evidence, and renders `jmend check` or standalone `jmend inspect`.
 It has analysis and finding interfaces, but registers no analyzers and emits no
-findings. Dependencies, classpaths, bytecode, native components, GraalVM,
+findings. Dependencies, resolved classpaths, native components, GraalVM,
 Native Image, Polyglot, JSON, CI mode, and TUI are planned.
 
 ## Architectural direction
@@ -161,6 +162,54 @@ not copy root target evidence to children, even when a local `<parent>` is
 declared; reliable parent/property/plugin inheritance is deferred until an
 appropriately scoped effective-model implementation exists. Unknown evidence
 is preferred to an incorrect inherited target.
+
+### Artifacts and static bytecode
+
+`ProjectModule.artifacts` owns zero, one, or many compiled artifacts for each
+root or child build unit. There is no flattened project-level artifact source
+of truth. Maven discovery is restricted to each known unit's `target/` and
+`target/classes/`; Gradle discovery is restricted to `build/libs/` and
+`build/classes/`. Missing output is valid, discovery never scans arbitrary
+repository paths, and JMend never invokes a build.
+
+Standalone `jmend inspect` enters the same artifact layer directly and does
+not require project detection. JAR container reading, build-tool-specific
+discovery, class parsing, normalization, analysis, and CLI rendering remain
+separate responsibilities.
+
+JMend reads the class magic/minor/major header independently, then delegates
+Java 17-25 structural parsing to a replaceable parser adapter. Parser objects
+are normalized immediately into JMend-owned evidence for identities, members,
+annotations, references, calls/accesses, bootstrap/dynamic linkage, modules,
+and local constant operands. The parser adapter contains no catalog of JVM,
+JDK, framework, GraalVM, or Polyglot APIs. A future major version retains its
+raw header and an explicit partially-unsupported state rather than being
+silently discarded or described as fully analyzed.
+
+Semantic recognition is a separate enrichment step over normalized evidence.
+Its API and namespace knowledge lives in explicit declarative catalogs whose
+rules match owners, members, descriptors, or namespace patterns. Adding or
+changing a semantic rule must not require changing class-file parsing. The
+catalog output remains evidence; analyzers, rather than catalogs or parsers,
+will decide compatibility, risk, severity, and remediation.
+
+Declared `JvmTarget` and actual class-file bytecode are independent facts. A
+declared Java 17 target and actual Java 21 class are both preserved; deciding
+whether that is compatible belongs to a later analyzer.
+
+JARs are read directly as ZIP containers without extraction. Manifest evidence
+is limited to diagnostically useful fields. Multi-Release entries retain
+`Base` or `Versioned(N)` provenance, and mixed bytecode versions are not
+collapsed. Size and entry-count bounds are applied before processing untrusted
+content.
+
+Observed calls carry artifact/class/method/instruction provenance plus an
+immediately preceding constant operand when present. A semantic rule may use
+that generic fact only when an exact method descriptor proves the invocation
+consumes that constant as its sole argument; all other cases remain
+`Unresolved`. This is deliberately not symbolic execution and no reflection,
+JNI, internal-API, resource, service, or compatibility finding is created by
+the evidence layer.
 
 ### Analysis and findings
 

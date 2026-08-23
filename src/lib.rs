@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod artifact;
 pub mod cli;
 pub mod commands;
 pub mod error;

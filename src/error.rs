@@ -5,6 +5,7 @@ use std::{error::Error, fmt, io};
 pub enum AppError {
     CurrentDirectory(io::Error),
     ProjectDetection(ProjectDetectionError),
+    Artifact(crate::artifact::ArtifactError),
     Output(io::Error),
 }
 
@@ -15,6 +16,7 @@ impl fmt::Display for AppError {
                 write!(formatter, "cannot determine the current directory")
             }
             Self::ProjectDetection(error) => error.fmt(formatter),
+            Self::Artifact(error) => error.fmt(formatter),
             Self::Output(_) => write!(formatter, "cannot write output"),
         }
     }
@@ -25,6 +27,7 @@ impl Error for AppError {
         match self {
             Self::CurrentDirectory(error) | Self::Output(error) => Some(error),
             Self::ProjectDetection(error) => Some(error),
+            Self::Artifact(error) => Some(error),
         }
     }
 }

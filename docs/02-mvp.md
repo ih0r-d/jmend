@@ -22,6 +22,9 @@ The `0.1` code currently implements:
 - direct Maven Java target evidence for root and child build units;
 - Maven and Gradle wrapper executable/metadata detection;
 - wrapper-first Maven and Gradle version and execution-JDK evidence;
+- per-build-unit discovery of available Maven/Gradle compiled artifacts;
+- Java 17-25 class-file structure and static bytecode evidence;
+- regular and Multi-Release JAR inspection plus standalone `jmend inspect`;
 - local JDK version, vendor, and runtime detection;
 - host operating-system and architecture metadata;
 - structured project, module, language/framework metadata, capability,
@@ -33,7 +36,7 @@ Modeled language, framework, capability, or build-tool variants do not mean
 they are detected or analyzed. In particular, Gradle multi-project discovery,
 language/framework detection, Gradle and effective/inherited Maven target
 resolution, broader build-tool toolchain data, dependency/classpath inspection,
-and findings remain unfinished.
+  and diagnostic findings remain unfinished.
 
 ## Delivery principles
 
@@ -50,11 +53,10 @@ and findings remain unfinished.
 ## Explicitly outside the current foundation
 
 - dependency graph or classpath resolution and analysis;
-- JAR and bytecode inspection;
 - linkage diagnostics;
 - native-library analysis;
 - GraalVM, Native Image, or Polyglot analysis;
-- a TUI or specialized inspection/explanation commands;
+- a TUI or additional explanation/comparison commands;
 - JSON, SARIF, CI policy, baselines, or PR annotations;
 - vulnerability scanning, runtime attach, JFR, heap/GC/thread monitoring;
 - automatic fixes, IDE plugins, web UI, or remote analysis.
