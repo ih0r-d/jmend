@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -14,7 +15,12 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Collect the current project fingerprint and run available checks.
-    Check,
+    Check {
+        /// Project path; defaults to the current directory.
+        project: Option<PathBuf>,
+    },
+    /// Inspect a compiled JVM .class or .jar artifact without a source project.
+    Inspect { artifact: PathBuf },
 }
 
 #[cfg(test)]
@@ -51,9 +57,10 @@ mod tests {
             .to_string();
 
         assert!(help.contains("check"));
-        for command in ["why", "inspect", "explain", "compare"] {
+        for command in ["why", "explain", "compare"] {
             assert!(!help.contains(command));
         }
+        assert!(help.contains("inspect"));
     }
 
     #[test]
@@ -69,5 +76,17 @@ mod tests {
             output.trim() == format!("jmend {}", env!("CARGO_PKG_VERSION"))
                 && !output.contains("_ __  __")
         }));
+    }
+
+    #[test]
+    fn check_path_and_standalone_inspect_are_real_commands() {
+        let check = Cli::try_parse_from(["jmend", "check", "project"]).unwrap();
+        assert!(
+            matches!(check.command,Some(Commands::Check{project:Some(path)}) if path==*"project")
+        );
+        let inspect = Cli::try_parse_from(["jmend", "inspect", "app.jar"]).unwrap();
+        assert!(
+            matches!(inspect.command,Some(Commands::Inspect{artifact}) if artifact==*"app.jar")
+        );
     }
 }

@@ -21,8 +21,9 @@ pub fn run(start: &Path) -> Result<CheckResult, AppError> {
 }
 
 pub fn run_with(start: &Path, executor: &dyn CommandExecutor) -> Result<CheckResult, AppError> {
-    let project = detector::detect(start)?;
+    let mut project = detector::detect(start)?;
     let build_tool_runtime = build_runtime::collect(&project, executor).ok();
+    crate::artifact::discovery::collect(&mut project);
     let jdk = match crate::runtime::jdk::detect_with(executor) {
         Ok(info) => JdkStatus::Detected(info),
         Err(JdkDetectionError::VersionNotFound) => JdkStatus::NotFound,

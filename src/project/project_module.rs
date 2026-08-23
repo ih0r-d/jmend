@@ -1,4 +1,5 @@
 use super::{JvmFramework, JvmLanguage, JvmTarget};
+use crate::artifact::ArtifactEvidence;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,6 +10,8 @@ pub struct ProjectModule {
     pub languages: Vec<JvmLanguage>,
     pub frameworks: Vec<JvmFramework>,
     pub jvm_targets: Vec<JvmTarget>,
+    /// Compiled artifacts discovered for this build unit. Zero, one, or many are valid.
+    pub artifacts: Vec<ArtifactEvidence>,
 }
 
 impl ProjectModule {
@@ -20,6 +23,7 @@ impl ProjectModule {
             languages: Vec::new(),
             frameworks: Vec::new(),
             jvm_targets: Vec::new(),
+            artifacts: Vec::new(),
         }
     }
 }
@@ -58,5 +62,20 @@ mod tests {
             context.jdk,
             JdkStatus::Detected(JdkInfo { ref version, .. }) if version == "17"
         ));
+    }
+
+    #[test]
+    fn declared_target_and_actual_bytecode_are_independent_evidence() {
+        let mut module = ProjectModule::new(PathBuf::from("project"));
+        module
+            .jvm_targets
+            .push(JvmTarget::new(JvmLanguageKind::Java, "17"));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/java25/fixtures/StaticEvidence.class");
+        module
+            .artifacts
+            .push(crate::artifact::inspect(&path).unwrap());
+        assert_eq!(module.jvm_targets[0].version, "17");
+        assert_eq!(module.artifacts[0].classes[0].version.java, Some(25));
     }
 }

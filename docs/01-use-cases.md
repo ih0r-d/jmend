@@ -39,11 +39,13 @@ evidence for JMend analysis.
 
 ### Dependency, classpath, and bytecode risks
 
-Planned inspection includes dependency paths and conflicts, duplicate classes,
-split packages, resource and service-provider collisions, unsupported
-bytecode, and missing referenced classes/methods/fields where reliable. Future
-drill-down may explain dependency origin or inspect JAR contents, but JMend is
-not intended as a generic dependency listing or archive viewer.
+Current inspection collects class structure, members, references, selected API
+calls, dynamic-linkage metadata, manifests, and actual bytecode versions from
+available classes and JARs. Planned analysis adds dependency paths and
+conflicts, duplicate classes, split packages, resource and service-provider
+collisions, unsupported combinations, and missing referenced
+classes/methods/fields where reliable. JMend is not intended as a generic
+dependency listing or archive viewer.
 
 ### Native component readiness
 

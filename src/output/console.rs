@@ -1,3 +1,4 @@
+use crate::artifact::{ArtifactEvidence, ArtifactKind, ClassKind, StructuralAnalysis};
 use crate::{analysis::finding::FindingSeverity, commands::check::CheckResult, runtime::JdkStatus};
 use anstream::AutoStream;
 use anstyle::{AnsiColor, Style};
@@ -18,6 +19,123 @@ pub fn render_check(result: &CheckResult) -> io::Result<()> {
     let mut output = AutoStream::auto(stdout.lock());
 
     render(&mut output, result)
+}
+
+pub fn render_artifact(artifact: &ArtifactEvidence) -> io::Result<()> {
+    let stdout = io::stdout();
+    let mut output = AutoStream::auto(stdout.lock());
+    render_artifact_to(&mut output, artifact)
+}
+
+fn render_artifact_to(output: &mut dyn Write, artifact: &ArtifactEvidence) -> io::Result<()> {
+    writeln!(
+        output,
+        "{TITLE}JMend{TITLE:#} {MUTED}v{}{MUTED:#}",
+        env!("CARGO_PKG_VERSION")
+    )?;
+    writeln!(output)?;
+    render_row(
+        output,
+        "Artifact",
+        &artifact.path.display().to_string(),
+        None,
+    )?;
+    render_row(
+        output,
+        "Type",
+        match artifact.kind {
+            ArtifactKind::Class => "CLASS",
+            ArtifactKind::Jar => "JAR",
+        },
+        None,
+    )?;
+    let versions = artifact
+        .classes
+        .iter()
+        .map(|class| {
+            class.version.java.map_or_else(
+                || format!("major {}", class.version.major),
+                |java| format!("Java {java}"),
+            )
+        })
+        .fold(Vec::new(), |mut values, value| {
+            if !values.contains(&value) {
+                values.push(value);
+            }
+            values
+        });
+    if !versions.is_empty() {
+        render_row(output, "Bytecode", &versions.join(", "), None)?;
+    }
+    let module = artifact.classes.iter().any(|class| {
+        class
+            .identity
+            .as_ref()
+            .is_some_and(|identity| identity.kind == ClassKind::Module)
+    });
+    render_row(output, "Module", if module { "yes" } else { "no" }, None)?;
+    if artifact.kind == ArtifactKind::Jar {
+        render_row(
+            output,
+            "Multi-Release",
+            if artifact.multi_release { "yes" } else { "no" },
+            None,
+        )?;
+    }
+    if artifact
+        .classes
+        .iter()
+        .any(|class| matches!(class.analysis, StructuralAnalysis::Unsupported { .. }))
+    {
+        render_row(output, "Analysis", "partially unsupported", None)?;
+    }
+    writeln!(output)?;
+    let usages = artifact
+        .classes
+        .iter()
+        .flat_map(|class| &class.api_usages)
+        .collect::<Vec<_>>();
+    let has_native_method = artifact
+        .classes
+        .iter()
+        .any(|class| class.methods.iter().any(|method| method.native));
+    let has_method_handles = artifact
+        .classes
+        .iter()
+        .any(|class| !class.method_handles.is_empty());
+    if !usages.is_empty() || has_native_method || has_method_handles {
+        writeln!(output, "{LABEL}Static evidence{LABEL:#}")?;
+        for (label, kind) in [
+            ("Reflection", crate::artifact::ApiUsageKind::Reflection),
+            (
+                "Dynamic loading",
+                crate::artifact::ApiUsageKind::DynamicClassLoading,
+            ),
+            (
+                "Native/JNI",
+                crate::artifact::ApiUsageKind::NativeLibraryLoading,
+            ),
+            ("Resources", crate::artifact::ApiUsageKind::ResourceAccess),
+            (
+                "ServiceLoader",
+                crate::artifact::ApiUsageKind::ServiceLoading,
+            ),
+            (
+                "Method handles",
+                crate::artifact::ApiUsageKind::MethodHandles,
+            ),
+        ] {
+            let detected = usages.iter().any(|usage| usage.kind == kind)
+                || (kind == crate::artifact::ApiUsageKind::NativeLibraryLoading
+                    && has_native_method)
+                || (kind == crate::artifact::ApiUsageKind::MethodHandles && has_method_handles);
+            if detected {
+                render_row(output, label, "detected", None)?;
+            }
+        }
+        writeln!(output)?;
+    }
+    writeln!(output, "{MUTED}0 findings{MUTED:#}")
 }
 
 pub fn render_root(help: &str) -> io::Result<()> {
@@ -112,6 +230,14 @@ fn render_fingerprint(output: &mut dyn Write, result: &CheckResult) -> io::Resul
         if let Some(jdk) = &runtime.jdk {
             render_row(output, "Build JDK", &jdk.version, jdk.vendor.as_deref())?;
         }
+    }
+
+    let artifacts = project
+        .build_units()
+        .flat_map(|unit| &unit.artifacts)
+        .count();
+    if artifacts > 0 {
+        render_row(output, "Artifacts", &artifacts.to_string(), None)?;
     }
 
     writeln!(output)
@@ -500,6 +626,7 @@ mod tests {
                 )],
                 frameworks: Vec::new(),
                 jvm_targets: Vec::new(),
+                artifacts: Vec::new(),
             },
             ProjectModule {
                 name: Some("analytics".to_string()),
@@ -511,6 +638,7 @@ mod tests {
                 ],
                 frameworks: Vec::new(),
                 jvm_targets: Vec::new(),
+                artifacts: Vec::new(),
             },
         ];
 

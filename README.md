@@ -21,8 +21,9 @@ Native Image, and Polyglot usage so compatibility problems and engineering
 risks can be found before builds, CI, or production.
 
 > **Status:** the current `0.1` foundation provides a project fingerprint, not
-> the future analysis described below. It does not yet analyze dependencies,
-> classpaths, bytecode, GraalVM, Native Image, or Polyglot usage, and it emits no
+> the future analysis described below. It now collects compiled artifact and
+> static bytecode evidence, but does not yet analyze dependencies, classpaths,
+> GraalVM, Native Image, or Polyglot readiness, and it emits no
 > diagnostic findings.
 
 ## What works today
@@ -32,6 +33,10 @@ risks can be found before builds, CI, or production.
 - Maven and Gradle wrapper metadata detection
 - direct Maven Java target evidence for root and child build units
 - wrapper-first Maven and Gradle version/runtime JDK evidence
+- automatic per-build-unit `.class`/JAR discovery from conventional Maven and Gradle outputs
+- Java 17–25 class structure, bytecode, reference, and API-usage evidence
+- safe JAR manifest and Multi-Release JAR inspection
+- standalone `jmend inspect <file.class|file.jar>` without a source project
 - local JDK version, vendor, and runtime detection
 - host operating-system and architecture metadata
 - a structured project/module, analysis, and findings foundation
@@ -42,6 +47,7 @@ Run JMend from a JVM project:
 
 ```console
 jmend check
+jmend inspect path/to/application.jar
 ```
 
 The output contains only detected, implemented information; roadmap

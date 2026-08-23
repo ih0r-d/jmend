@@ -12,6 +12,8 @@ Foundation scope:
 - Maven multi-module discovery;
 - direct Maven Java target evidence for root and child build units;
 - wrapper-first Maven and Gradle runtime/JDK evidence;
+- JVM artifact discovery and Java 17-25 static bytecode evidence;
+- standalone class/JAR inspection and Multi-Release JAR structure;
 - JDK and host environment metadata;
 - structured project/module and findings foundation;
 - compact CLI and branded root command;
@@ -35,7 +37,7 @@ Focus:
 - JVM language and target detection;
 - build-tool runtime and toolchain metadata;
 - dependency and resolved-classpath model;
-- bytecode inspection foundation;
+- extension of the implemented bytecode inspection foundation into analyzers;
 - first cross-layer JVM findings.
 
 ## 0.3 — GraalVM & Native Image
