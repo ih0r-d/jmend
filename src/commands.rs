@@ -14,9 +14,9 @@ pub fn run(command: Commands) -> Result<(), AppError> {
             let result = check::run(&start)?;
             console::render_check(&result).map_err(AppError::Output)
         }
-        Commands::Inspect { artifact } => {
-            let result = inspect::run(&artifact)?;
-            console::render_artifact(&result).map_err(AppError::Output)
+        Commands::Inspect { path } => {
+            let result = inspect::run(&path)?;
+            console::render_inspection(&result).map_err(AppError::Output)
         }
     }
 }

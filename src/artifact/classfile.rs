@@ -39,11 +39,11 @@ pub(crate) fn inspect_bytes(
             "class file exceeds 64 MiB safety limit".into(),
         ));
     }
-    if !(61..=69).contains(&version.major) {
+    if ristretto_classfile::Version::from(version.major, version.minor).is_err() {
         evidence.analysis = StructuralAnalysis::Unsupported {
             reason: format!(
-                "class-file major {} is outside supported Java 17-25",
-                version.major
+                "class-file version {}.{} is not supported by the structural parser",
+                version.major, version.minor
             ),
         };
         return Ok(evidence);
@@ -67,7 +67,7 @@ fn read_header(bytes: &[u8]) -> Result<BytecodeVersion, ArtifactError> {
     Ok(BytecodeVersion {
         minor,
         major,
-        java: (61..=69).contains(&major).then_some(major - 44),
+        java: JavaRelease::from_class_major(major),
     })
 }
 
@@ -548,7 +548,7 @@ mod tests {
                 BytecodeVersion {
                     minor: 0,
                     major,
-                    java: Some(java)
+                    java: Some(JavaRelease::Standard(java))
                 }
             );
             let identity = evidence.identity.unwrap();
@@ -579,11 +579,32 @@ mod tests {
             let mut bytes = JAVA25.to_vec();
             bytes[6..8].copy_from_slice(&(java + 44).to_be_bytes());
             let evidence = inspect_bytes(&bytes, None, ClassLocation::Direct).unwrap();
-            assert_eq!(evidence.version.java, Some(java));
+            assert_eq!(evidence.version.java, Some(JavaRelease::Standard(java)));
             assert!(matches!(evidence.analysis, StructuralAnalysis::Complete));
             assert!(evidence.identity.is_some());
             assert!(!evidence.method_calls.is_empty());
         }
+    }
+
+    #[test]
+    fn structurally_parses_older_dependency_bytecode_supported_by_parser() {
+        let evidence = inspect_bytes(
+            include_bytes!("../../tests/fixtures/java8/fixtures/LegacyDependency.class"),
+            None,
+            ClassLocation::Direct,
+        )
+        .unwrap();
+        assert_eq!(evidence.version.major, 52);
+        assert_eq!(evidence.version.java, Some(JavaRelease::Standard(8)));
+        assert_eq!(evidence.analysis, StructuralAnalysis::Complete);
+        assert_eq!(
+            evidence
+                .identity
+                .as_ref()
+                .map(|identity| identity.name.as_str()),
+            Some("fixtures/LegacyDependency")
+        );
+        assert!(!evidence.methods.is_empty());
     }
 
     #[test]

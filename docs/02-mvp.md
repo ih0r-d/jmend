@@ -24,7 +24,7 @@ The `0.1` code currently implements:
 - wrapper-first Maven and Gradle version and execution-JDK evidence;
 - per-build-unit discovery of available Maven/Gradle compiled artifacts;
 - Java 17-25 class-file structure and static bytecode evidence;
-- regular and Multi-Release JAR inspection plus standalone `jmend inspect`;
+- regular and Multi-Release JAR inspection plus project/module/artifact `jmend inspect`;
 - local JDK version, vendor, and runtime detection;
 - host operating-system and architecture metadata;
 - structured project, module, language/framework metadata, capability,

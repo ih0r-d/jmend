@@ -32,13 +32,20 @@ struct MethodRule {
 }
 
 #[derive(Clone, Copy)]
-struct StaticStringRule {
+struct StaticTargetRule {
     owner: &'static str,
     name: &'static str,
     descriptor: &'static str,
+    constant: ConstantKind,
 }
 
-impl StaticStringRule {
+#[derive(Clone, Copy)]
+enum ConstantKind {
+    String,
+    Class,
+}
+
+impl StaticTargetRule {
     fn matches(self, member: &MemberReference) -> bool {
         member.owner == self.owner
             && member.name == self.name
@@ -117,49 +124,63 @@ const JDK_INTERNAL_NAMESPACES: &[TextMatcher] = &[
     TextMatcher::Prefix("jdk/internal/"),
 ];
 
-// Each descriptor has exactly one String parameter. For verified JVM bytecode,
-// an immediately preceding LDC string is therefore the value consumed by the
-// invocation, rather than merely a nearby constant.
-const STATIC_STRING_RULES: &[StaticStringRule] = &[
-    StaticStringRule {
+// Each descriptor has exactly one parameter matching the declared constant
+// kind. For verified JVM bytecode, an immediately preceding LDC is therefore
+// consumed by the invocation rather than being merely a nearby constant.
+const STATIC_TARGET_RULES: &[StaticTargetRule] = &[
+    StaticTargetRule {
         owner: "java/lang/Class",
         name: "forName",
         descriptor: "(Ljava/lang/String;)Ljava/lang/Class;",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/ClassLoader",
         name: "loadClass",
         descriptor: "(Ljava/lang/String;)Ljava/lang/Class;",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/System",
         name: "load",
         descriptor: "(Ljava/lang/String;)V",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/System",
         name: "loadLibrary",
         descriptor: "(Ljava/lang/String;)V",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/Class",
         name: "getResource",
         descriptor: "(Ljava/lang/String;)Ljava/net/URL;",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/Class",
         name: "getResourceAsStream",
         descriptor: "(Ljava/lang/String;)Ljava/io/InputStream;",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/ClassLoader",
         name: "getResource",
         descriptor: "(Ljava/lang/String;)Ljava/net/URL;",
+        constant: ConstantKind::String,
     },
-    StaticStringRule {
+    StaticTargetRule {
         owner: "java/lang/ClassLoader",
         name: "getResourceAsStream",
         descriptor: "(Ljava/lang/String;)Ljava/io/InputStream;",
+        constant: ConstantKind::String,
+    },
+    StaticTargetRule {
+        owner: "java/util/ServiceLoader",
+        name: "load",
+        descriptor: "(Ljava/lang/Class;)Ljava/util/ServiceLoader;",
+        constant: ConstantKind::Class,
     },
 ];
 
@@ -199,13 +220,20 @@ fn enrich_class(class: &mut ClassEvidence) {
 }
 
 fn static_resolution(call: &super::MethodCallEvidence) -> StaticResolution {
-    let rule_matches = STATIC_STRING_RULES
+    STATIC_TARGET_RULES
         .iter()
-        .any(|rule| rule.matches(&call.target));
-    match (rule_matches, call.preceding_constant.as_ref()) {
-        (true, Some(ConstantEvidence::String(value))) => StaticResolution::Static(value.clone()),
-        _ => StaticResolution::Unresolved,
-    }
+        .find(|rule| rule.matches(&call.target))
+        .and_then(
+            |rule| match (rule.constant, call.preceding_constant.as_ref()) {
+                (ConstantKind::String, Some(ConstantEvidence::String(value)))
+                | (ConstantKind::Class, Some(ConstantEvidence::Class(value))) => {
+                    Some(value.clone())
+                }
+                _ => None,
+            },
+        )
+        .map(StaticResolution::Static)
+        .unwrap_or(StaticResolution::Unresolved)
 }
 
 #[cfg(test)]
@@ -245,6 +273,10 @@ mod tests {
         ] {
             assert!(evidence.api_usages.iter().any(|usage| usage.kind == kind));
         }
+        assert!(evidence.api_usages.iter().any(|usage| {
+            usage.kind == ApiUsageKind::ServiceLoading
+                && usage.target == StaticResolution::Static("java/lang/Runnable".into())
+        }));
         assert!(
             evidence
                 .jdk_internal_references

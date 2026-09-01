@@ -10,7 +10,7 @@ Use `ristretto_classfile` 0.33.0. A small JMend header reader validates
 `CAFEBABE` and preserves raw minor/major versions before delegation. Full
 custom ClassFile parsing was rejected.
 
-The selected crate explicitly accepts major versions 61 through 69, models all
+The selected crate explicitly accepts major versions 45 through 69, models all
 constant-pool tags, fields, methods, decoded `Code` instructions, annotations,
 signatures, exceptions, inner/nest metadata, records, permitted subclasses,
 bootstrap methods, invokedynamic, method handles/types, and module attributes.
@@ -28,7 +28,7 @@ test fixtures, so normal tests require no installed JDK.
 
 | Candidate | Result | Relevant evidence and limitation |
 |---|---|---|
-| `ristretto_classfile` 0.33.0 | Selected | Explicit Java 17-25 versions; decoded instructions and modern typed attributes; unknown attributes preserved. Parser caps structural parsing at major 69, handled by JMend's header/partial state. |
+| `ristretto_classfile` 0.33.0 | Selected | Explicit historical versions from major 45 through Java 25/major 69; decoded instructions and modern typed attributes; unknown attributes preserved. Parser caps structural parsing at major 69, handled by JMend's header/partial state. |
 | `cafebabe` 0.9.0 | Rejected | Rich resolved API, instructions, and Chapter 4 attributes; it has no upper-major rejection and many 22-25 classes may parse. Its documented/tested contract stops at Java 21, so Java 25 correctness is not assured. |
 | `jclassfile` 0.6.1 | Rejected | Active Java 25 Chapter 4 parser with modern attributes, but `Code` remains raw bytes and constant-pool indexes require another layer; insufficient alone for invocation/access evidence. |
 | `jvmti-bindings` 3.0.2 | Rejected | Defensive limits, unknown attributes, and broad modern attributes, but its class parser retains raw `Code` bytes and the enclosing JVMTI/JNI crate is broader than JMend needs. |

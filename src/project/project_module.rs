@@ -76,6 +76,9 @@ mod tests {
             .artifacts
             .push(crate::artifact::inspect(&path).unwrap());
         assert_eq!(module.jvm_targets[0].version, "17");
-        assert_eq!(module.artifacts[0].classes[0].version.java, Some(25));
+        assert_eq!(
+            module.artifacts[0].classes[0].version.java,
+            Some(crate::artifact::JavaRelease::Standard(25))
+        );
     }
 }
