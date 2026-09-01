@@ -6,6 +6,7 @@ pub enum AppError {
     CurrentDirectory(io::Error),
     ProjectDetection(ProjectDetectionError),
     Artifact(crate::artifact::ArtifactError),
+    Inspect(crate::commands::inspect::InspectError),
     Output(io::Error),
 }
 
@@ -17,6 +18,7 @@ impl fmt::Display for AppError {
             }
             Self::ProjectDetection(error) => error.fmt(formatter),
             Self::Artifact(error) => error.fmt(formatter),
+            Self::Inspect(error) => error.fmt(formatter),
             Self::Output(_) => write!(formatter, "cannot write output"),
         }
     }
@@ -28,6 +30,7 @@ impl Error for AppError {
             Self::CurrentDirectory(error) | Self::Output(error) => Some(error),
             Self::ProjectDetection(error) => Some(error),
             Self::Artifact(error) => Some(error),
+            Self::Inspect(error) => Some(error),
         }
     }
 }

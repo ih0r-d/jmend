@@ -19,8 +19,11 @@ pub enum Commands {
         /// Project path; defaults to the current directory.
         project: Option<PathBuf>,
     },
-    /// Inspect a compiled JVM .class or .jar artifact without a source project.
-    Inspect { artifact: PathBuf },
+    /// Inspect JVM project or artifact evidence.
+    Inspect {
+        /// JVM project directory, module directory, JAR, or class file.
+        path: PathBuf,
+    },
 }
 
 #[cfg(test)]
@@ -85,8 +88,17 @@ mod tests {
             matches!(check.command,Some(Commands::Check{project:Some(path)}) if path==*"project")
         );
         let inspect = Cli::try_parse_from(["jmend", "inspect", "app.jar"]).unwrap();
-        assert!(
-            matches!(inspect.command,Some(Commands::Inspect{artifact}) if artifact==*"app.jar")
-        );
+        assert!(matches!(inspect.command,Some(Commands::Inspect{path}) if path==*"app.jar"));
+    }
+
+    #[test]
+    fn inspect_help_describes_the_unified_path_contract() {
+        let help = Cli::try_parse_from(["jmend", "inspect", "--help"])
+            .err()
+            .expect("inspect help should use clap display flow")
+            .to_string();
+        assert!(help.contains("Inspect JVM project or artifact evidence"));
+        assert!(help.contains("JVM project directory, module directory, JAR, or class file"));
+        assert!(help.contains("<PATH>"));
     }
 }

@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn collect(project: &mut Project) {
+pub(crate) fn collect(project: &mut Project) {
     let tool = project.build_tool;
     collect_for(tool, &mut project.root_module);
     for module in &mut project.modules {
@@ -27,13 +27,17 @@ fn collect_for(tool: BuildTool, module: &mut ProjectModule) {
 
 fn discover_maven(unit: &Path) -> Vec<PathBuf> {
     let mut paths = files_with_extension(&unit.join("target"), "jar");
-    collect_classes(&unit.join("target").join("classes"), &mut paths);
+    if paths.is_empty() {
+        collect_classes(&unit.join("target").join("classes"), &mut paths);
+    }
     paths.sort();
     paths
 }
 fn discover_gradle(unit: &Path) -> Vec<PathBuf> {
     let mut paths = files_with_extension(&unit.join("build").join("libs"), "jar");
-    collect_classes(&unit.join("build").join("classes"), &mut paths);
+    if paths.is_empty() {
+        collect_classes(&unit.join("build").join("classes"), &mut paths);
+    }
     paths.sort();
     paths
 }
@@ -156,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn gradle_discovery_uses_known_build_unit_outputs() {
+    fn gradle_discovery_prefers_packaged_artifacts_to_duplicate_loose_classes() {
         let root = std::env::temp_dir().join(format!(
             "jmend-gradle-artifacts-{}-{}",
             std::process::id(),
@@ -172,7 +176,15 @@ mod tests {
         .unwrap();
         let mut module = ProjectModule::new(root.clone());
         collect_for(BuildTool::Gradle, &mut module);
-        assert_eq!(module.artifacts.len(), 2);
+        assert_eq!(module.artifacts.len(), 1);
+        assert_eq!(module.artifacts[0].kind, crate::artifact::ArtifactKind::Jar);
+        fs::remove_file(root.join("build/libs/app.jar")).unwrap();
+        collect_for(BuildTool::Gradle, &mut module);
+        assert_eq!(module.artifacts.len(), 1);
+        assert_eq!(
+            module.artifacts[0].kind,
+            crate::artifact::ArtifactKind::Class
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -162,7 +162,10 @@ mod tests {
         ]);
         let evidence = inspect(&path).unwrap();
         assert_eq!(evidence.classes.len(), 1);
-        assert_eq!(evidence.classes[0].version.java, Some(21));
+        assert_eq!(
+            evidence.classes[0].version.java,
+            Some(JavaRelease::Standard(21))
+        );
         fs::remove_file(path).unwrap();
         let empty = jar(&[("README.txt", b"nothing")]);
         assert!(inspect(&empty).unwrap().classes.is_empty());
@@ -206,7 +209,50 @@ mod tests {
                 .iter()
                 .map(|c| c.version.java.unwrap())
                 .collect::<Vec<_>>(),
-            vec![17, 21, 25]
+            vec![
+                JavaRelease::Standard(17),
+                JavaRelease::Standard(21),
+                JavaRelease::Standard(25)
+            ]
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn fat_jar_with_java_8_dependency_is_fully_analyzed() {
+        let path = jar(&[
+            (
+                "BOOT-INF/classes/fixtures/StaticEvidence.class",
+                include_bytes!("../../tests/fixtures/java17/fixtures/StaticEvidence.class"),
+            ),
+            (
+                "BOOT-INF/classes/fixtures/LegacyDependency.class",
+                include_bytes!("../../tests/fixtures/java8/fixtures/LegacyDependency.class"),
+            ),
+        ]);
+        let evidence = inspect(&path).unwrap();
+        assert_eq!(
+            evidence
+                .classes
+                .iter()
+                .map(|class| class.version.java)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(JavaRelease::Standard(17)),
+                Some(JavaRelease::Standard(8))
+            ]
+        );
+        assert!(
+            evidence
+                .classes
+                .iter()
+                .all(|class| class.analysis == StructuralAnalysis::Complete)
+        );
+        assert!(
+            evidence
+                .classes
+                .iter()
+                .all(|class| class.identity.is_some())
         );
         fs::remove_file(path).unwrap();
     }

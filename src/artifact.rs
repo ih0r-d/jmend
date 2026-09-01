@@ -2,7 +2,7 @@
 
 pub(crate) mod catalog;
 pub(crate) mod classfile;
-pub mod discovery;
+pub(crate) mod discovery;
 pub(crate) mod jar;
 
 use std::path::PathBuf;
@@ -46,7 +46,43 @@ pub enum StructuralAnalysis {
 pub struct BytecodeVersion {
     pub minor: u16,
     pub major: u16,
-    pub java: Option<u16>,
+    pub java: Option<JavaRelease>,
+}
+
+/// Java release corresponding to a known JVM class-file major version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaRelease {
+    Java1_0Or1_1,
+    Java1_2,
+    Java1_3,
+    Java1_4,
+    Standard(u16),
+}
+
+impl JavaRelease {
+    #[must_use]
+    pub const fn from_class_major(major: u16) -> Option<Self> {
+        match major {
+            45 => Some(Self::Java1_0Or1_1),
+            46 => Some(Self::Java1_2),
+            47 => Some(Self::Java1_3),
+            48 => Some(Self::Java1_4),
+            49..=69 => Some(Self::Standard(major - 44)),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for JavaRelease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Java1_0Or1_1 => formatter.write_str("1.0/1.1"),
+            Self::Java1_2 => formatter.write_str("1.2"),
+            Self::Java1_3 => formatter.write_str("1.3"),
+            Self::Java1_4 => formatter.write_str("1.4"),
+            Self::Standard(release) => release.fmt(formatter),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -269,4 +305,20 @@ pub fn inspect(path: &std::path::Path) -> Result<ArtifactEvidence, ArtifactError
     }?;
     catalog::enrich(&mut artifact);
     Ok(artifact)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JavaRelease;
+
+    #[test]
+    fn maps_known_class_file_majors_independently_of_project_baseline() {
+        for (major, release) in [(52, 8), (55, 11), (61, 17), (65, 21), (69, 25)] {
+            assert_eq!(
+                JavaRelease::from_class_major(major),
+                Some(JavaRelease::Standard(release))
+            );
+        }
+        assert_eq!(JavaRelease::from_class_major(70), None);
+    }
 }

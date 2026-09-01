@@ -8,26 +8,38 @@ use std::{
 pub fn detect(start: &Path) -> Result<Project, ProjectDetectionError> {
     for candidate in start.ancestors() {
         if let Some(build_tool) = detect_build_tool(candidate)? {
-            let (root_module, modules) = match build_tool {
-                BuildTool::Maven => {
-                    let model = maven::inspect_project(candidate)?;
-                    (model.root_module, model.modules)
-                }
-                BuildTool::Gradle | BuildTool::Sbt | BuildTool::Mill | BuildTool::Ant => {
-                    (root_module(candidate, build_tool)?, Vec::new())
-                }
-            };
-            return Ok(Project {
-                root: candidate.to_path_buf(),
-                build_tool,
-                wrapper: detect_wrapper(candidate, build_tool)?,
-                root_module,
-                modules,
-            });
+            return build_project(candidate, build_tool);
         }
     }
 
     Err(ProjectDetectionError::Unsupported(start.to_path_buf()))
+}
+
+/// Detects a project whose build root is exactly `root` without walking to a parent.
+pub(crate) fn detect_at(root: &Path) -> Result<Project, ProjectDetectionError> {
+    let Some(build_tool) = detect_build_tool(root)? else {
+        return Err(ProjectDetectionError::Unsupported(root.to_path_buf()));
+    };
+    build_project(root, build_tool)
+}
+
+fn build_project(root: &Path, build_tool: BuildTool) -> Result<Project, ProjectDetectionError> {
+    let (root_module, modules) = match build_tool {
+        BuildTool::Maven => {
+            let model = maven::inspect_project(root)?;
+            (model.root_module, model.modules)
+        }
+        BuildTool::Gradle | BuildTool::Sbt | BuildTool::Mill | BuildTool::Ant => {
+            (root_module(root, build_tool)?, Vec::new())
+        }
+    };
+    Ok(Project {
+        root: root.to_path_buf(),
+        build_tool,
+        wrapper: detect_wrapper(root, build_tool)?,
+        root_module,
+        modules,
+    })
 }
 
 fn root_module(root: &Path, build_tool: BuildTool) -> Result<ProjectModule, ProjectDetectionError> {

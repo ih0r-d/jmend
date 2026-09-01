@@ -36,7 +36,7 @@ risks can be found before builds, CI, or production.
 - automatic per-build-unit `.class`/JAR discovery from conventional Maven and Gradle outputs
 - Java 17–25 class structure, bytecode, reference, and API-usage evidence
 - safe JAR manifest and Multi-Release JAR inspection
-- standalone `jmend inspect <file.class|file.jar>` without a source project
+- detailed `jmend inspect <path>` for projects, modules, JARs, and class files
 - local JDK version, vendor, and runtime detection
 - host operating-system and architecture metadata
 - a structured project/module, analysis, and findings foundation
@@ -48,6 +48,7 @@ Run JMend from a JVM project:
 ```console
 jmend check
 jmend inspect path/to/application.jar
+jmend inspect path/to/project
 ```
 
 The output contains only detected, implemented information; roadmap

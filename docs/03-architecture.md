@@ -172,13 +172,23 @@ of truth. Maven discovery is restricted to each known unit's `target/` and
 `build/classes/`. Missing output is valid, discovery never scans arbitrary
 repository paths, and JMend never invokes a build.
 
-Standalone `jmend inspect` enters the same artifact layer directly and does
-not require project detection. JAR container reading, build-tool-specific
-discovery, class parsing, normalization, analysis, and CLI rendering remain
-separate responsibilities.
+When packaged JARs exist for a build unit they are preferred over the same
+loose compiler output, preventing project summaries from counting identical
+bytecode twice. Loose class files remain the fallback before packaging, and
+multiple packaged artifacts remain independently owned by their module.
+
+`jmend inspect <path>` resolves regular JAR/class files directly without
+project detection. For a directory it detects that exact project or module
+root, then reuses the same project model and artifact discovery as `check`.
+Project inspection preserves project → module → artifact provenance. JAR
+container reading, build-tool-specific discovery, class parsing,
+normalization, semantic enrichment, and CLI rendering remain separate
+responsibilities.
 
 JMend reads the class magic/minor/major header independently, then delegates
-Java 17-25 structural parsing to a replaceable parser adapter. Parser objects
+all historical class-file versions supported by the selected parser (currently
+major 45-69) to a replaceable parser adapter. This artifact-parser capability
+is independent of JMend's Java 17+ project/runtime baseline. Parser objects
 are normalized immediately into JMend-owned evidence for identities, members,
 annotations, references, calls/accesses, bootstrap/dynamic linkage, modules,
 and local constant operands. The parser adapter contains no catalog of JVM,
